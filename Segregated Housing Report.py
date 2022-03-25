@@ -1,0 +1,589 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jul 30 16:37:35 2021
+
+@author: WMui
+"""
+import sys
+python_path = r'C:\Users\K012352\Allegheny County\Criminal Justice Analytics - Documents\Wilson\Python\dhs_util'
+
+if python_path not in sys.path:
+    sys.path.append(python_path)
+        
+import jail as jail
+import house as house
+import logreader as log
+import databases as db
+import pandas as pd
+from datetime import timedelta, datetime as dt
+from collections import defaultdict
+from tqdm import tqdm
+import os
+import calendar
+import numpy as np
+
+
+HOUR_LIMIT = 20 # Constant that defines what the limit of in-cell time
+SAVE = True   # Set to True to output report to excel sheet
+MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
+                                # already completed and loading all_movements
+                                # from previously created excel sheet.
+ACTIVITY_LOG_PRE_PROCESSED = False # Set to True, if processing of activity
+                                # logs already completed and loading log
+                                # from previously created excel sheet.
+COHORT_PRE_PROCESSED = False # Set to True, if original "SH_Aggregated" list
+                                # already created and loading cohort list from
+                                # previously created excel sheet
+BYPASS = False # Set to True, to disregard specific cells as SH, and consider
+                # all cells SH for purposes of calculation.                                
+
+START_DATE = '2022-03-01' # Start date for jail analysis
+END_DATE = '2022-03-18' # End date for jail analysis
+
+
+def main():
+    #######################################################################
+    # Set starting parameters to use for analysis
+    data_dir = os.path.dirname(os.getcwd()) + '\\Reports\\'
+    bypass = BYPASS # bypass set to true during COVID lockdown
+                    # signifying all cells are considered SH                    
+    start_date = START_DATE
+    end_date = END_DATE
+    month = dt.strptime(start_date, '%Y-%m-%d').month
+    year = dt.strptime(start_date, '%Y-%m-%d').year
+    #######################################################################
+    
+    # Retrieve SYSID associated with each DOC number
+    sysid_to_doc = get_sysid_doc_lkp()
+    
+    
+    # Create activity log (either through manual aggregation of all logs
+    # in the Data Logs folder (in the respective month folder) or by loading
+    # the preprocessed excel sheet in there.
+    master_activity_log = log.load_activity_logs(calendar.month_name[month], 
+                                                 str(year), 
+                                                 ACTIVITY_LOG_PRE_PROCESSED,
+                                                 sysid_to_doc)
+    
+    #######################################################################
+    
+    all_movements = get_all_movements_log(MOVEMENTS_PRE_PROCESSED, 
+                                          start_date, end_date, bypass)
+    
+    #######################################################################
+
+    # all_movements dataframe will have every housing movement from the 
+    # start_date to end_date for each individual present in the jail.
+    # sh_dictionary, pod_dictionary = process_all_movements_log(all_movements, 
+    #                                           master_activity_log,
+    #                                           sysid_to_doc, pre-processed)
+    
+    SH_Aggregated = process_all_movements_log(all_movements, 
+                                              master_activity_log,
+                                              sysid_to_doc, COHORT_PRE_PROCESSED)
+    
+    # Transfer running list of days in segregated house as well as pods,
+    # to dataframe, and add metric columns for Num_SH_Days, SH_Days, and 
+    # Num_Episodes
+    # SH_Aggregated = pd.DataFrame(list(sh_dictionary.items()),
+    #                              columns=['SYSID', 'SH_Days'])
+    # PODS_Aggregated = pd.DataFrame(list(pod_dictionary.items()),
+    #                              columns=['SYSID', 'PODS'])
+    # SH_Aggregated = SH_Aggregated.merge(PODS_Aggregated, how='left',
+    #                                     on='SYSID', indicator=False)
+    #######################################################################
+    
+    # Retrieve a list of individuals by SYSID, who had days spent higher than a
+    # Tier 1 designation, or were designated as new or transfer (and thus not
+    # required to be given out of cell time)
+    exclusion_list = get_exclusion_days(master_activity_log, sysid_to_doc)
+    
+    # Merge exclusion_list and find the difference between SH_Days and
+    # days when a medical exclusion exists
+    SH_Aggregated = SH_Aggregated.merge(exclusion_list, on='SYSID',
+                                        how='left')
+    # Need to create empty list to do a set.difference
+    SH_Aggregated['Med Ex Dates'] = SH_Aggregated['Med Ex Dates'].\
+        apply(lambda x: x if isinstance(x, list) else [])
+    SH_Aggregated['Non Med Ex Dates'] = SH_Aggregated.\
+        apply(lambda x: list(set(x['SH_Days']) - set(x['Med Ex Dates'])), 
+              axis = 1)
+    
+    #######################################################################
+    
+    # Re-sort Non Med Ex Dates
+    SH_Aggregated['Non Med Ex Dates'] = SH_Aggregated.\
+        apply(lambda x: sorted(x['Non Med Ex Dates']), axis=1)
+    
+    # Add Num_SH_days, and Num_episodes (related to SH_Days), and Num_Med_Ex_Days,
+    # and Num_Non_Ex_Days
+    SH_Aggregated['Num_SH_Days'] = SH_Aggregated['SH_Days'].\
+        apply(lambda x : len(x))
+    add_num_episodes(SH_Aggregated, 'SH_Days', 'NUM_EPISODES')
+    SH_Aggregated['Num_Med_Ex_Days'] = SH_Aggregated['Med Ex Dates'].\
+        apply(lambda x: len(x))
+    SH_Aggregated['Num_Non_Med_Ex_Days'] = SH_Aggregated['Non Med Ex Dates'].\
+        apply(lambda x: len(x))
+    add_num_episodes(SH_Aggregated, 'Non Med Ex Dates', 'NUM_NON_EX_EPISODES')
+    
+    # Add Booking profile
+    SH_Aggregated = add_booking_profile(SH_Aggregated)
+
+    if SAVE :
+        SH_Aggregated.to_excel(data_dir + 'Segregated Housing list ' + 
+                               start_date + ' to ' + end_date + '.xlsx')
+    #######################################################################
+
+def get_exclusion_days(master_activity_log, sysid_to_doc):
+    '''Retrieve a dataframe listing all individuals from the
+    master_activity_log, and the days, for which they had a medical status of
+    Tier 2 or above, or were designated .
+    '''
+    # Get all individuals-days for which the med status was Tier 2 or above
+    temp_df = master_activity_log.loc[
+        (master_activity_log['Med Status'].isin(['Tier 2', 'Tier 3', 'Tier 4', 
+                                            'Tier 5', 'Isolation', 'ISOLATION'])) | 
+        (master_activity_log.isin(['New', 'Transfer']).any(axis=1))].copy()
+
+    
+    # Link SYSID to list of DOC - duplicate rows, where DOCs link to an old
+    # SYSID is not an issue, as this list is only used to match to current
+    # SYSIDS in the given month's SH_Aggregated list, all 'old' SYSID will be
+    # ignored on the join.
+    temp_df = temp_df.merge(sysid_to_doc, how='left', on='DOC')
+    temp_df['SYSID'] = temp_df['SYSID'].fillna(0).astype(np.int64)
+    
+    # Get dataframe of distinct SYSID, with days that match the med statuses
+    # that are valid exclusions
+    temp_df = pd.DataFrame(temp_df.groupby('SYSID')['Date'].\
+                           agg(lambda x: list(set(x)))).reset_index()
+        
+    # Remove row with SYSID = 0, as those are unmatched individuals from
+    # sysid_to_doc. QA should investigate why there are individuals unmatched,
+    # presumably because the DOC is entered in wrong from the activit log
+    temp_df = temp_df.loc[temp_df.SYSID != 0]
+    temp_df.rename(columns = {'Date':'Med Ex Dates'}, inplace = True)
+    
+    if temp_df.shape[0] > 0 :
+        temp_df['Med Ex Dates'] = temp_df.apply(lambda x: sorted(x['Med Ex Dates']), 
+                                                axis=1)
+        
+    return temp_df
+    
+       
+def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
+    ''' Create an all_movements log, either by reading from a pre-processed excel
+    sheet, or by running through all housing records and generating an
+    an all_movements log manually
+    
+    :param pre_procesed: True, if all_movements log exists as excel file and
+                        can be loaded directly, otherwise run process manually
+    
+    :return: returns an all_movement log
+    '''
+    # Setup jail object, and initialize attributes
+    if bypass is None:
+        bypass = BYPASS
+        
+    data_dir = os.path.dirname(os.getcwd()) + '\\Reports\\'
+    all_movements = pd.DataFrame()
+    
+    # Run through the iteration of movements in each day if not previously
+    # processed, in which case the all_movements log will be loaded from an
+    # excel sheet, rather than being generated in here.
+    if not pre_processed:
+        acj = jail.jail(bypass = bypass)
+        jail_days = acj.get_jail_datetimes(start_date, end_date)
+        
+        # Iterate each day and do the analysis
+        for date in jail_days:
+            
+            print("Processing movements on " + date)
+            # set the jailstate for the given date
+            acj.set_jail_state(date, bypass)
+            
+            # Start a new housing file/log
+            acj_movements = house.housing()
+            
+            # grab all housing movements for current date
+            # change this to use start date and end date, so we account for different audit times
+            curr_day_movements = acj_movements.get_housing_history_by_date_range(date)
+            
+            # print("Add initial jail state as first entries in movement log for " +
+            #       date)
+            acj_movements.update_movement_log_from_jail_snapshot(acj)
+            
+            # Iterate through each movement and update movement_log
+            for index, row in tqdm(curr_day_movements.iterrows(), 
+                                    total = curr_day_movements.shape[0],
+                                    unit = 'Moves', ncols = 100):
+                # I believe moving this out of the loop will serve the same
+                # purpose and improve performance.
+                acj_movements.update_movement_log_from_jail_snapshot(acj)
+                
+                # print("Processing move at: " + \
+                #       row.MDATE.strftime('%Y-%m-%d %H:%M:%S'))
+                acj.move_sysid(row.SYSID, row.SECTION, row.BLOCK, row.CELL, 
+                                  row.MDATE.strftime('%Y-%m-%d %H:%M:%S'))
+                acj_movements.update_movement_log_from_jail_snapshot(acj)
+            
+            # Append all house movements of the particular day
+            all_movements = all_movements.append(acj_movements.movement_log.\
+                                                  assign(JAIL_DAY=date.split(' ', 1)[0]))
+                
+            print("\n")
+
+        # Output all movements as tracking log
+        all_movements.to_excel(data_dir + 'All movements ' + start_date + \
+                               ' to ' + end_date + '.xlsx')
+    
+    # If movements were previously processed, load all_movements from
+    # previously created movement log excel sheet instead of creating the
+    # log manually.
+    else:
+        all_movements = pd.read_excel(data_dir + 'All movements ' + \
+                                      start_date + ' to ' + end_date + '.xlsx')
+        all_movements.drop(columns='Unnamed: 0', inplace=True, errors='ignore')
+                
+    return all_movements
+
+
+
+def process_all_movements_log(all_movements:pd.DataFrame, 
+                              master_activity_log:pd.DataFrame,
+                              sysid_to_doc:pd.DataFrame,
+                              pre_processed = False):
+    ''' Takes a multi-day movement log and extracts a dictionary of people who
+        were in SH for more than 20 hours for each JAIL_DAY group, as well as 
+        the days for which they were considered to be in SH
+        
+        :param all_movements: All movements (including whether
+            housing was a SH at the time)
+        :param master_activity_log: All activity logs aggregated
+        :param sysid_to_doc: lookup table between sysid-to-doc
+        :param pre-processed: True, if SH cohort list already generated, and
+            results can be read from the pre-processed excel sheet)
+        
+        :return: returns True if duplicates
+            
+    '''
+    data_dir = os.path.dirname(os.getcwd()) + '\\Reports\\'
+    file_name = 'SH_Cohort list'
+    
+    print("Identifying cohort in 'Segregated Housing' each day")
+    
+    # If pre-processed = True, don't process movements log, and grab results
+    # from excel sheet
+    if pre_processed :
+        df = pd.read_excel(data_dir + file_name + " list " + START_DATE + \
+                           " to " + END_DATE + ".xlsx")
+        
+        return df
+    
+    # Start a running list of sh individuals as dictionary, as well as the
+    # pods housing each individual
+    running_sh_dict = defaultdict(list)
+    running_pod_dict = defaultdict(list)
+      
+    # Iterate over each day and retrieve list of sh individuals
+    for day in all_movements.JAIL_DAY.unique():
+        print('Analyzing movements on ' + str(day))
+        day_movements = all_movements.loc[all_movements.JAIL_DAY == day]
+    
+        # day_movements is all movements for a day. Loop through for each
+        # individual in the file and spit out a dictionary of those who
+        # have greater than 20 hours (see code from original SH report.py
+        for inmate in tqdm(day_movements['SYSID'].unique().tolist(),
+                           total = len(day_movements['SYSID'].unique().tolist()),
+                           ncols = 100,
+                           unit = 'SYSID') :
+            df = day_movements.loc[day_movements.SYSID == inmate].copy()
+            
+            # if statement used to handle long words in 'BLOCK' column
+            df['unit'] = df.apply(lambda x: x['SECTION'] + \
+                                  x['BLOCK'][3:] if x['SECTION'] != 'LEVG' else '-' + x['BLOCK'], 
+                                  axis = 1)
+            
+            if over_hour_limit(df, master_activity_log, sysid_to_doc) :                                
+                #curr_day_sh[inmate] = day
+        
+                running_sh_dict[inmate].append(day)
+                running_pod_dict[inmate].append(','.join(df['unit'].unique().tolist()))
+    
+        
+    # Transfer running list of days in segregated house as well as pods,
+    # to dataframe, and add metric columns for Num_SH_Days, SH_Days, and 
+    # Num_Episodes. Then write to excel sheet if SAVED = True
+    SH_Aggregated = pd.DataFrame(list(running_sh_dict.items()),
+                                 columns=['SYSID', 'SH_Days'])
+    PODS_Aggregated = pd.DataFrame(list(running_pod_dict.items()),
+                                 columns=['SYSID', 'PODS'])
+    SH_Aggregated = SH_Aggregated.merge(PODS_Aggregated, how='left',
+                                        on='SYSID', indicator=False)
+    
+
+    SH_Aggregated.to_excel = (data_dir + file_name + START_DATE + \
+                             " to " + END_DATE + ".xlsx")
+        
+    return SH_Aggregated
+    
+    
+
+def add_num_episodes(df, column_name, new_column_name):
+    ''' Returns original df, with added 'episodes' column detailing the number of
+    episodes from the array of dates, which signify the number of continguous
+    days in the array. Note, this algorithm relies on the dates in 'column_name'
+    to be sorted before analysis, as this algorithm looks for # of days 
+    differences between the n and n+1 record.
+    
+    :param column_name: Name of column that contains sequential dates
+    :param new_column_name: Name of "Num Episodes" column
+    
+    :return: returns modified dataframe
+    '''
+    num_episodes_list = []
+    one_day = timedelta(days=1)
+    # Find the number of episodes for each row, representing each person who
+    # had spent sometime in segregated housing
+    for index, row in df.iterrows():        
+        # Change string of dates, into iterable list of dates
+        row_array = row[column_name]
+        row_array = [dt.strptime(date, "%Y-%m-%d").date() for date in row_array]
+        
+        # Set the default number of episodes
+        if len(row_array) >= 1 :
+            num_episodes = 1
+        else:
+            num_episodes = 0
+            
+        # Go through each list of dates to find the number of "breaks" in
+        # sequential days, which will signify the number of episodes
+        for i in range(len(row_array)-1) :
+            if row_array[i] + one_day != row_array[i+1] :
+                num_episodes = num_episodes + 1
+            
+        # Create running list tracking num_episodes for each person, to append
+        # to the original dataframe, df
+        num_episodes_list.append(num_episodes)
+        
+    df[new_column_name] = num_episodes_list
+        
+    return df
+
+ 
+def add_booking_profile(df, duplicates=False):
+    ''' Updates the original dataframe with the booking profile retrieved from 
+        AC_OMS. By default only the most recent demographic profile, from the most
+        recent booking episode per DOC.
+    '''
+    ACPRD1 = db.Oracle('ACPRD1')
+   
+    # Default to returning the 5 columns below if no demographic columns
+    # are specified
+    _demos = "SYSID, COMDATE, RELDATE, DOC, GEND_OMS, MCI_UNIQ_ID, " + \
+        "F_NAME as FNAME, L_NAME as LNAME, DOB, RACE, ETHN as ETHNICITY, " + \
+            "FLOOR(MONTHS_BETWEEN(COMDATE, DOB)/12) as Age"
+    
+    query = "SELECT DISTINCT " + _demos + " FROM AC_OMS.JAIL_DAILY_STATUS"
+                
+    dw_df = ACPRD1.query(query)
+    dw_df['lkp_rank'] = dw_df.groupby('SYSID')['COMDATE'].rank(method='first',
+                                                             ascending=False)
+    
+    # If duplicates parameter is False, only take the most recent demographic
+    # profile
+    if ~duplicates:
+    #    df['SYSID'] = pd.to_numeric(df['SYSID'])
+        dw_df = dw_df.loc[dw_df.lkp_rank == 1]
+        
+    df = pd.merge(df, dw_df, on='SYSID', how='left')
+    df.drop(columns='lkp_rank', inplace=True)
+    ACPRD1.disconnect()
+    
+    return df
+
+
+def over_hour_limit(movement_log, master_activity_log, sysid_to_doc) :
+    ''' Identify if the person from the given movement_log was over the 20 
+        hour SH hour limit. This algorithm will factor in out-of-cell time 
+        given in the activity logs, as well as using the activity log to 
+        determine who should be considered as being in a segregated housing 
+        protocol (namely in POD 1C).
+
+        Parameters
+        ----------
+        movement_log: pandas dataframe, the movement log for a particular day
+                        and inmate (sysid)
+        master_activity_log: pandas dataframe
+        sysid_to_doc: pandas dataframe
+        
+        Returns
+        ----------
+        boolean
+            Whether the individual represented in the given movement_log was 
+            in an isolated cell for more than HOUR_LIMIT time.
+    '''
+         
+    over_hour_limit = False    
+    
+    movement_log = movement_log.copy().reset_index(drop=True)
+    movement_log['DURATION'] = None
+    START_DATE = movement_log.loc[0, 'MDATE']
+    END_DATE = dt.strptime(START_DATE, '%Y-%m-%d %H:%M:%S') + timedelta(days=1)
+    sysid = movement_log['SYSID'][0]
+    activity_hours = 0
+                                    
+    
+    # Determine day of log, to extract activity logs for that day
+    rec_day = dt.strptime(movement_log.JAIL_DAY[0], '%Y-%m-%d')
+    
+    # Determine the doc associated with the sysid
+    doc = sysid_to_doc.loc[sysid_to_doc.SYSID == sysid, 'DOC'].squeeze()
+    
+
+    #######################################################################
+    # Kludge section that uses the activity log to identify those who
+    # ARE in fact in segregated housing, regardless of the unit they are in.
+    # This primarily effects units in POD5MC as those units will sometimes be
+    # used for SH, and sometimes not, and we can only tell, per person, per
+    # date, from the existence of a person in the activity log
+    
+    #######################################################################
+    # Process here only relevant for temporary analysis.
+    # Currently, for individuals in POD 5MC. We only consider individuals 
+    # segregated if they exist in the activity log. Create the list of DOC which
+    # are present in 5MC for a particular START_DATE
+    if (master_activity_log is not None) and (not master_activity_log.empty) :
+        # pod5mc_cohort = master_activity_log.loc[(master_activity_log.Date.dt.\
+        #                                         strftime('%Y-%m-%d') == START_DATE.split(' ')[0]) &
+        #                                         (master_activity_log.POD == '5MC')]
+        
+        pod5mc_cohort = master_activity_log.loc[(master_activity_log.Date == START_DATE.split(' ')[0]) &
+                                        (master_activity_log.POD == '5MC')]
+            
+        pod5mc_cohort = pod5mc_cohort.groupby(['Last Name', 'First Name', 'DOC'], 
+                              as_index=False).agg(set)[['Last Name', 
+                                                        'First Name', 
+                                                        'DOC']]
+        pod5mc_cohort['DOC'] = pod5mc_cohort['DOC'].astype('int64')
+    
+        # if individual with doc is not found in the pod5mc_cohort list, remove
+        # all LEV5M, PODC movement entries, otherwise keep all their movement 
+        # entries. This section is specifc to inclusion of individuals in pod5mc.
+        # This code is unneeded if all individuals in pod5mc are considered to be
+        # SH individuals.
+        if (isinstance(doc, np.integer)) and (doc not in pod5mc_cohort.values):
+            drop_indexes = movement_log[(movement_log.SECTION == 'LEV5M') &
+                                        (movement_log.BLOCK == 'PODC')].index
+            movement_log.drop(drop_indexes, inplace=True)
+            movement_log = movement_log.reset_index()  
+    
+  
+    # Determine total out of cell (activity) time for given inmate with DOC
+    # If doc = <int32> indicates a doc was found from sysid_to_doc table,
+    # otherwise datatype would be empty Series.
+    if isinstance(doc, np.integer):      
+        # Modified to calculate total activity time manually instead of using
+        # 'Total Out of Cell Time' cell
+        activity_hours = round(master_activity_log.\
+            loc[(master_activity_log.Date == rec_day) &
+                (master_activity_log.DOC == doc), 
+                ['Shower Time', 'Rec1 Time', 'Court Time', 'Video Time', 
+                 'Prog Time', 'Rec2 Time', 'Rec3 Time', 'Rec 4 Time',
+                 'Misc Time']].sum().sum(), 2)
+    
+    #######################################################################
+        
+    # Iterates through all movements for particular sysid and sets the DURATION
+    # column.
+    for index, row in movement_log.iterrows() :
+        
+        # if at the last row, calculate duration from MDATE to next day's
+        # audit time
+        if index == (movement_log.shape[0] - 1) :
+            movement_log.loc[index, 'DURATION'] = \
+                (END_DATE - dt.strptime(movement_log.loc[index, 'MDATE'], 
+                                              '%Y-%m-%d %H:%M:%S'))/timedelta(hours=1)
+        else :
+            movement_log.loc[index, 'DURATION'] = \
+                (dt.strptime(movement_log.loc[index + 1, 'MDATE'], '%Y-%m-%d %H:%M:%S') - 
+                 dt.strptime(movement_log.loc[index, 'MDATE'], '%Y-%m-%d %H:%M:%S'))/timedelta(hours=1)
+    
+    
+    # Calculates the total time spent in a SH unit, minus activity hours
+    total = (movement_log.loc[movement_log.HOUSING == 'SH', 'DURATION']
+             .sum()) - activity_hours
+    
+    # If SH housing is greater than the HOUR_LIMIT then True
+    if total > HOUR_LIMIT :
+        over_hour_limit = True
+        
+    return over_hour_limit
+
+
+
+'''Deprecated by defaultdict usage
+Update the running segregated housing list with additional SH individuals
+if they do not exist, or update the list of days they are in segregated housing
+if the individual currently exists'''
+def update_sh_dictionary(existing_sh_list:dict, new_sh_list:dict):
+    for key, val in new_sh_list.items():
+        if key in existing_sh_list:
+            existing_sh_list[key] = [existing_sh_list[key], val]
+        else:
+            existing_sh_list[key] = val
+
+
+
+'''Temporary function that identifies all the units an individual was in
+for a given day for which they were in SH'''
+def add_pods_to_sh_aggregated(sh_aggregated, all_movements):
+    all_movements['UNIT'] = all_movements['SECTION'] + ' ' + \
+        all_movements['BLOCK'] + ' ' + all_movements['CELL']
+        
+    all_moves = all_movements.groupby(['SYSID', 'JAIL_DAY'])['UNIT'].\
+        apply(lambda x: ', '.join(x)).reset_index()
+        
+    temp = sh_aggregated.merge(all_moves[['SYSID', 'JAIL_DAY', 'UNIT']], 
+                               how='left', on='SYSID')
+    
+    return temp
+
+'''Join multiple segregation logs into one'''
+def join_multiple_reports(report1, report2):
+    pass
+
+
+''' Retrieve df of sysid to doc lookup table'''
+def get_sysid_doc_lkp():
+    # Retrieve SYSID associated with each DOC number
+    AC_OMS = db.Oracle('ACPRD1')
+    sysid_to_doc = AC_OMS.query("SELECT DISTINCT SYSID, DOC FROM " + \
+                                "AC_OMS.JAIL_DAILY_STATUS jds WHERE ACJ_DATE " + \
+                                ">= TO_DATE('2020-01-01', 'YYYY-MM-DD')")
+    sysid_to_doc['DOC'] = sysid_to_doc['DOC'].astype(int)
+    
+    return sysid_to_doc
+    
+if __name__ == "__main__" :
+    main()
+    
+    # Temporary code that reads Geoff's modified SH report sheet and adds
+    # Demographics to the sheet
+    # data_dir = os.path.dirname(os.getcwd()) + '\\Reports\\'
+    # df = pd.read_excel(data_dir + 'Copy of Segregated Housing list 2022-01-01 to 2022-01-03.xlsx', 'Sheet2')
+    
+    # sysid_to_doc = get_sysid_doc_lkp()
+    # df = df.merge(sysid_to_doc, on='DOC', how='left')
+    
+    # df = add_booking_profile(df)
+    # df = df = df[df['lkp_rank'].notna()]
+    # df.drop(columns = ['lkp_rank', 'DOC_y'], inplace=True)
+    # df.rename(columns={"DOC_x": "DOC"}, inplace=True)
+    
+    # writer = pd.ExcelWriter(data_dir + 'Copy of Segregated Housing list 2022-01-01 to 2022-01-03.xlsx')
+    # df.to_excel(writer, 'Sheet2')
+    # writer.save()
+    # writer.close()
+    
+    
