@@ -5,7 +5,7 @@ Created on Fri Jul 30 16:37:35 2021
 @author: WMui
 """
 import sys
-python_path = r'C:\Users\K012352\Allegheny County\Criminal Justice Analytics - Documents\Wilson\Python\dhs_util'
+python_path = r'C:\Users\K012352\Allegheny County\Criminal Justice Analytics - Documents\Wilson\Code\dhs_util'
 
 if python_path not in sys.path:
     sys.path.append(python_path)
@@ -38,7 +38,7 @@ BYPASS = False # Set to True, to disregard specific cells as SH, and consider
                 # all cells SH for purposes of calculation.                                
 
 START_DATE = '2022-03-01' # Start date for jail analysis
-END_DATE = '2022-03-18' # End date for jail analysis
+END_DATE = '2022-03-31' # End date for jail analysis
 
 
 def main():
