@@ -25,10 +25,10 @@ import numpy as np
 
 HOUR_LIMIT = 20 # Constant that defines what the limit of in-cell time
 SAVE = True   # Set to True to output report to excel sheet
-MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
+MOVEMENTS_PRE_PROCESSED = True # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
-ACTIVITY_LOG_PRE_PROCESSED = False # Set to True, if processing of activity
+ACTIVITY_LOG_PRE_PROCESSED = True # Set to True, if processing of activity
                                 # logs already completed and loading log
                                 # from previously created excel sheet.
 COHORT_PRE_PROCESSED = False # Set to True, if original "SH_Aggregated" list
@@ -440,45 +440,6 @@ def over_hour_limit(movement_log, master_activity_log, sysid_to_doc) :
     # Determine the doc associated with the sysid
     doc = sysid_to_doc.loc[sysid_to_doc.SYSID == sysid, 'DOC'].squeeze()
     
-
-    #######################################################################
-    # Kludge section that uses the activity log to identify those who
-    # ARE in fact in segregated housing, regardless of the unit they are in.
-    # This primarily effects units in POD5MC as those units will sometimes be
-    # used for SH, and sometimes not, and we can only tell, per person, per
-    # date, from the existence of a person in the activity log
-    
-    #######################################################################
-    # Process here only relevant for temporary analysis.
-    # Currently, for individuals in POD 5MC. We only consider individuals 
-    # segregated if they exist in the activity log. Create the list of DOC which
-    # are present in 5MC for a particular START_DATE
-    if (master_activity_log is not None) and (not master_activity_log.empty) :
-        # pod5mc_cohort = master_activity_log.loc[(master_activity_log.Date.dt.\
-        #                                         strftime('%Y-%m-%d') == START_DATE.split(' ')[0]) &
-        #                                         (master_activity_log.POD == '5MC')]
-        
-        pod5mc_cohort = master_activity_log.loc[(master_activity_log.Date == START_DATE.split(' ')[0]) &
-                                        (master_activity_log.POD == '5MC')]
-            
-        pod5mc_cohort = pod5mc_cohort.groupby(['Last Name', 'First Name', 'DOC'], 
-                              as_index=False).agg(set)[['Last Name', 
-                                                        'First Name', 
-                                                        'DOC']]
-        pod5mc_cohort['DOC'] = pod5mc_cohort['DOC'].astype('int64')
-    
-        # if individual with doc is not found in the pod5mc_cohort list, remove
-        # all LEV5M, PODC movement entries, otherwise keep all their movement 
-        # entries. This section is specifc to inclusion of individuals in pod5mc.
-        # This code is unneeded if all individuals in pod5mc are considered to be
-        # SH individuals.
-        if (isinstance(doc, np.integer)) and (doc not in pod5mc_cohort.values):
-            drop_indexes = movement_log[(movement_log.SECTION == 'LEV5M') &
-                                        (movement_log.BLOCK == 'PODC')].index
-            movement_log.drop(drop_indexes, inplace=True)
-            movement_log = movement_log.reset_index()  
-    
-  
     # Determine total out of cell (activity) time for given inmate with DOC
     # If doc = <int32> indicates a doc was found from sysid_to_doc table,
     # otherwise datatype would be empty Series.
@@ -495,7 +456,8 @@ def over_hour_limit(movement_log, master_activity_log, sysid_to_doc) :
     #######################################################################
         
     # Iterates through all movements for particular sysid and sets the DURATION
-    # column.
+    # column, identifying the amount of in-cell time a person spent in each
+    # pod.
     for index, row in movement_log.iterrows() :
         
         # if at the last row, calculate duration from MDATE to next day's
@@ -510,6 +472,20 @@ def over_hour_limit(movement_log, master_activity_log, sysid_to_doc) :
                  dt.strptime(movement_log.loc[index, 'MDATE'], '%Y-%m-%d %H:%M:%S'))/timedelta(hours=1)
     
     
+    #######################################################################
+    # Kludge section that uses the activity log to identify those who
+    # ARE in fact in segregated housing, regardless of the unit they are in.
+    # This primarily effects units that will sometimes be
+    # used for SH, and sometimes not, and we can only tell, per person, per
+    # date, from the existence of a person in the activity log. Run
+    # 'activity_log_cohort_check' for each pod applicable.
+    #######################################################################
+    # Apply above kludge removal for '5MC'
+    movement_log = activity_log_cohort_check('5MC', doc, master_activity_log, 
+                                             movement_log)
+    
+    
+    
     # Calculates the total time spent in a SH unit, minus activity hours
     total = (movement_log.loc[movement_log.HOUSING == 'SH', 'DURATION']
              .sum()) - activity_hours
@@ -521,12 +497,57 @@ def over_hour_limit(movement_log, master_activity_log, sysid_to_doc) :
     return over_hour_limit
 
 
+def activity_log_cohort_check(pod:str, doc:np.integer, master_activity_log, 
+                              movement_log):
+    '''Check if individual exists in activity log for specified pod on the day
+    specified by the current movement_log. If not, remove all movement_log
+    entries in the pod-date in question.
 
-'''Deprecated by defaultdict usage
-Update the running segregated housing list with additional SH individuals
-if they do not exist, or update the list of days they are in segregated housing
-if the individual currently exists'''
+    Parameters
+    ----------
+    pod : pod that requires an individual be listed in the actiivty log to be
+        considered eligible for inclusion in the segregated housing list.
+        This should only be pods that have mixed SH and non-SH usage, and thus
+        not all individuals in the pod should be considered SH unless they have
+        an entry in the activity log. (i.e. '5MC', '1D', etc.)
+        
+    master_activity_log: pandas dataframe, master activity log
+    
+    movement_log: pandas dataframe, the movement log for a particular day
+        and inmate (sysid)
+    '''
+    # Only consider individuals to be segregated if they exist in the activity 
+    # log. Create the list of DOC which are present in the activity log for
+    # a particular pod on a particular START_DATE
+    if (master_activity_log is not None) and (not master_activity_log.empty) :
+        
+        sh_eligible_cohort = master_activity_log.loc[
+            (master_activity_log.Date == START_DATE.split(' ')[0]) &
+            (master_activity_log.POD == pod)]
+            
+        sh_eligible_cohort = sh_eligible_cohort.groupby(['Last Name', 
+                                                         'First Name', 'DOC'], 
+                                        as_index=False).agg(set)[['Last Name', 
+                                                        'First Name', 
+                                                        'DOC']]
+        sh_eligible_cohort['DOC'] = sh_eligible_cohort['DOC'].astype('int64')
+    
+        # If individual with doc is not found in the pod_cohort list, remove
+        # all movement entries while in that pod.
+        if (isinstance(doc, np.integer)) and (doc not in sh_eligible_cohort.values):
+            drop_indexes = movement_log[(movement_log.SECTION == ('LEV' + pod[0:-1])) &
+                                        (movement_log.BLOCK == ('POD' + pod[-1]))].index
+            movement_log.drop(drop_indexes, inplace=True)
+            movement_log = movement_log.reset_index()
+            
+    return movement_log
+
 def update_sh_dictionary(existing_sh_list:dict, new_sh_list:dict):
+    '''Deprecated by defaultdict usage
+    Update the running segregated housing list with additional SH individuals
+    if they do not exist, or update the list of days they are in segregated 
+    housing if the individual currently exists'''
+    
     for key, val in new_sh_list.items():
         if key in existing_sh_list:
             existing_sh_list[key] = [existing_sh_list[key], val]
