@@ -138,9 +138,8 @@ class housing:
         datetime range
         
         @param start_datetime - The starting datetime for movement log retrieval
-        @param end_datetime - the ending datetime for movement log retrieval.
-                            End_datetime set to start_datetime + 1 when no
-                            date is explicitly set.
+        @param end_datetime - End_datetime set to start_datetime + 1 (to the 
+                            hour) when no date is explicitly set.
         '''
         
         format = '%Y-%m-%d %H:%M:%S'

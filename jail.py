@@ -479,7 +479,7 @@ class jail :
     inclusive'''
     def get_jail_datetimes(self, start_date:str, end_date:str):
         start_date = dt.strptime(start_date, '%Y-%m-%d').date()
-        end_date = dt.strptime(end_date, '%Y-%m-%d').date() + timedelta(days=1)
+        end_date = dt.strptime(end_date, '%Y-%m-%d').date() # + timedelta(days=1)
         
         date_list = self.audit_date_times.\
             loc[(self.audit_date_times.ACJ_DATE.dt.date >= start_date) & 

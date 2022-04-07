@@ -25,13 +25,13 @@ import numpy as np
 
 HOUR_LIMIT = 20 # Constant that defines what the limit of in-cell time
 SAVE = True   # Set to True to output report to excel sheet
-MOVEMENTS_PRE_PROCESSED = True # Set to True, if processsing of movement logs
+MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
 ACTIVITY_LOG_PRE_PROCESSED = True # Set to True, if processing of activity
                                 # logs already completed and loading log
                                 # from previously created excel sheet.
-COHORT_PRE_PROCESSED = False # Set to True, if original "SH_Aggregated" list
+COHORT_PRE_PROCESSED = False     # Set to True, if original "SH_Aggregated" list
                                 # already created and loading cohort list from
                                 # previously created excel sheet
 BYPASS = False # Set to True, to disregard specific cells as SH, and consider
@@ -72,13 +72,9 @@ def main():
     
     #######################################################################
 
-    # all_movements dataframe will have every housing movement from the 
-    # start_date to end_date for each individual present in the jail.
-    # sh_dictionary, pod_dictionary = process_all_movements_log(all_movements, 
-    #                                           master_activity_log,
-    #                                           sysid_to_doc, pre-processed)
-    
-    SH_Aggregated = process_all_movements_log(all_movements, 
+    # Analyze_all_movements returns a dataframe of all individuals who were
+    # considered to be in SH, before the check on medical exclusions.
+    SH_Aggregated = analyze_all_movements_log(all_movements, 
                                               master_activity_log,
                                               sysid_to_doc, COHORT_PRE_PROCESSED)
     
@@ -129,9 +125,9 @@ def main():
     # Add Booking profile
     SH_Aggregated = add_booking_profile(SH_Aggregated)
 
-    if SAVE :
-        SH_Aggregated.to_excel(data_dir + 'Segregated Housing list ' + 
-                               start_date + ' to ' + end_date + '.xlsx')
+    
+    SH_Aggregated.to_excel(data_dir + 'Segregated Housing list ' + 
+                           start_date + ' to ' + end_date + '.xlsx')
     #######################################################################
 
 def get_exclusion_days(master_activity_log, sysid_to_doc):
@@ -241,21 +237,27 @@ def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
     # previously created movement log excel sheet instead of creating the
     # log manually.
     else:
-        all_movements = pd.read_excel(data_dir + 'All movements ' + \
-                                      start_date + ' to ' + end_date + '.xlsx')
+        file_path = data_dir + 'All movements ' + start_date + ' to ' + \
+            end_date + '.xlsx'
+            
+        print ("All movements pre-processed...loading " + file_path)
+        
+        all_movements = pd.read_excel(file_path)
         all_movements.drop(columns='Unnamed: 0', inplace=True, errors='ignore')
                 
     return all_movements
 
 
 
-def process_all_movements_log(all_movements:pd.DataFrame, 
+def analyze_all_movements_log(all_movements:pd.DataFrame, 
                               master_activity_log:pd.DataFrame,
                               sysid_to_doc:pd.DataFrame,
                               pre_processed = False):
-    ''' Takes a multi-day movement log and extracts a dictionary of people who
-        were in SH for more than 20 hours for each JAIL_DAY group, as well as 
-        the days for which they were considered to be in SH
+    ''' Takes a multi-day movement log and iterates through each day, and 
+        iterates across all individuals in jail each day and returns a dataframe
+        (which originated from a dictionary) of individuals who were in SH for 
+        more than 20 hours for each JAIL_DAY group, as well as the days for 
+        which they were considered to be in SH.
         
         :param all_movements: All movements (including whether
             housing was a SH at the time)
@@ -264,11 +266,11 @@ def process_all_movements_log(all_movements:pd.DataFrame,
         :param pre-processed: True, if SH cohort list already generated, and
             results can be read from the pre-processed excel sheet)
         
-        :return: returns True if duplicates
+        :return: DataFrame of all SH individuals
             
     '''
     data_dir = os.path.dirname(os.getcwd()) + '\\Reports\\'
-    file_name = 'SH_Cohort list'
+    file_name = 'SH_Cohort list '
     
     print("Identifying cohort in 'Segregated Housing' each day")
     
@@ -321,9 +323,9 @@ def process_all_movements_log(all_movements:pd.DataFrame,
     SH_Aggregated = SH_Aggregated.merge(PODS_Aggregated, how='left',
                                         on='SYSID', indicator=False)
     
-
-    SH_Aggregated.to_excel = (data_dir + file_name + START_DATE + \
-                             " to " + END_DATE + ".xlsx")
+    if SAVE:
+        SH_Aggregated.to_excel(data_dir + file_name + START_DATE + " to " + \
+                               END_DATE + ".xlsx")
         
     return SH_Aggregated
     
@@ -435,7 +437,8 @@ def over_hour_limit(movement_log, master_activity_log, sysid_to_doc) :
                                     
     
     # Determine day of log, to extract activity logs for that day
-    rec_day = dt.strptime(movement_log.JAIL_DAY[0], '%Y-%m-%d')
+    #rec_day = dt.strptime(movement_log.JAIL_DAY[0], '%Y-%m-%d')
+    rec_day = movement_log.JAIL_DAY[0]
     
     # Determine the doc associated with the sysid
     doc = sysid_to_doc.loc[sysid_to_doc.SYSID == sysid, 'DOC'].squeeze()
@@ -516,13 +519,15 @@ def activity_log_cohort_check(pod:str, doc:np.integer, master_activity_log,
     movement_log: pandas dataframe, the movement log for a particular day
         and inmate (sysid)
     '''
+    
     # Only consider individuals to be segregated if they exist in the activity 
     # log. Create the list of DOC which are present in the activity log for
     # a particular pod on a particular START_DATE
     if (master_activity_log is not None) and (not master_activity_log.empty) :
-        
+        # Movement log day/activity log day
+        rec_day = movement_log.JAIL_DAY[0] 
         sh_eligible_cohort = master_activity_log.loc[
-            (master_activity_log.Date == START_DATE.split(' ')[0]) &
+            (master_activity_log.Date == rec_day) &
             (master_activity_log.POD == pod)]
             
         sh_eligible_cohort = sh_eligible_cohort.groupby(['Last Name', 

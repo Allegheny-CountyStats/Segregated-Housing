@@ -47,14 +47,12 @@ def load_activity_logs(month:str, year:str, pre_processed, sysid_to_doc):
         
     # If pre_processed, load activity log from excel, and exit function
     if pre_processed:
-        master_activity_log = pd.read_excel(data_log_path + 'master_activity_log_' + \
-                                            month + '_' + year + '.xlsx', 
-                                            index_col = 0)
-        # master_activity_log['Date'] = master_activity_log['Date'].\
-        #     dt.strftime('%Y-%m-%d')
-            
-        print('Activity logs pre-processed...loading ' + data_dir + \
-              'master_activity_log_' + month + '_' + year + '.xlsx')
+        file_path = data_log_path + 'master_activity_log_' + month + '_' + \
+            year + '.xlsx'
+        
+        master_activity_log = pd.read_excel(file_path, index_col = 0)
+                    
+        print('Activity logs pre-processed...loading ' + file_path + '\n')
     
         return master_activity_log
     
