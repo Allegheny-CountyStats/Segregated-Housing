@@ -28,7 +28,7 @@ SAVE = True   # Set to True to output report to excel sheet
 MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
-ACTIVITY_LOG_PRE_PROCESSED = True # Set to True, if processing of activity
+ACTIVITY_LOG_PRE_PROCESSED = False # Set to True, if processing of activity
                                 # logs already completed and loading log
                                 # from previously created excel sheet.
 COHORT_PRE_PROCESSED = False     # Set to True, if original "SH_Aggregated" list
@@ -37,8 +37,8 @@ COHORT_PRE_PROCESSED = False     # Set to True, if original "SH_Aggregated" list
 BYPASS = False # Set to True, to disregard specific cells as SH, and consider
                 # all cells SH for purposes of calculation.                                
 
-START_DATE = '2022-03-01' # Start date for jail analysis
-END_DATE = '2022-03-31' # End date for jail analysis
+START_DATE = '2022-04-01' # Start date for jail analysis
+END_DATE = '2022-04-25' # End date for jail analysis
 
 
 def main():
@@ -191,6 +191,9 @@ def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
         acj = jail.jail(bypass = bypass)
         jail_days = acj.get_jail_datetimes(start_date, end_date)
         
+        # Start a new housing file/log
+        acj_movements = house.housing()
+        
         # Iterate each day and do the analysis
         for date in jail_days:
             
@@ -198,27 +201,26 @@ def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
             # set the jailstate for the given date
             acj.set_jail_state(date, bypass)
             
-            # Start a new housing file/log
-            acj_movements = house.housing()
-            
             # grab all housing movements for current date
             # change this to use start date and end date, so we account for different audit times
             curr_day_movements = acj_movements.get_housing_history_by_date_range(date)
             
-            # print("Add initial jail state as first entries in movement log for " +
-            #       date)
+            # Reset the movement_log in the house() object for each day
+            acj_movements.reset_movement_log()
+            
+            # Set initial jail state as first entries in movement log for day
             acj_movements.update_movement_log_from_jail_snapshot(acj)
             
             # Iterate through each movement and update movement_log
             for index, row in tqdm(curr_day_movements.iterrows(), 
                                     total = curr_day_movements.shape[0],
                                     unit = 'Moves', ncols = 100):
-                # I believe moving this out of the loop will serve the same
-                # purpose and improve performance.
-                acj_movements.update_movement_log_from_jail_snapshot(acj)
                 
-                # print("Processing move at: " + \
-                #       row.MDATE.strftime('%Y-%m-%d %H:%M:%S'))
+                # Perhaps move this to after the first move since 
+                # update_movement_log_from_jail_snapshot() was just run
+                #acj_movements.update_movement_log_from_jail_snapshot(acj)
+                
+
                 acj.move_sysid(row.SYSID, row.SECTION, row.BLOCK, row.CELL, 
                                   row.MDATE.strftime('%Y-%m-%d %H:%M:%S'))
                 acj_movements.update_movement_log_from_jail_snapshot(acj)

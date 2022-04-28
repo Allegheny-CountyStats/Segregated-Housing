@@ -21,6 +21,8 @@ pd.set_option('display.max_columns', 10)
 BAD_FILE_LOG = 'bad_file_log' # File to write bad activity logs to
 ACTIVITY_DUPLICATES_LOG = 'Activity_log_duplicates' # File to write duplicate
                                                     # activity log entries to.
+DUPLICATE_LOG_FILE = 'duplicate_log_files' # File to write duplicate log files to.
+DUPLICATE_DOC_FILE = 'duplicate_docs' # File to write duplicate DOCs to.
 
 # Returns master activity log from all activity logs, or if pre_processdd
 # is True, retrieve master_activity log from previously created excel sheet.
@@ -59,6 +61,14 @@ def load_activity_logs(month:str, year:str, pre_processed, sysid_to_doc):
     # Perform manual aggregation of activity logs
     else:
         activity_log_files  = [x for x in os.listdir(data_log_path) if re.match('POD.*\.xlsx', x)]
+        
+        # Output to excel file all files with '()' as indication of duplicate
+        # file
+        dup_files = [i for i in activity_log_files if '(' in i]
+        pd.DataFrame(dup_files).to_excel(data_log_path + DUPLICATE_LOG_FILE + \
+                                         "_" + month + "_" + year + '.xlsx', 
+                                    header=False, index=False)
+        
         # Check if directory exists
         if os.path.isdir(data_log_path):
             num_files = len(activity_log_files)
@@ -118,6 +128,13 @@ def load_activity_logs(month:str, year:str, pre_processed, sysid_to_doc):
                                                          errors='coerce')
             master_activity_log['Date'] = master_activity_log['Date'].\
                 dt.strftime('%Y-%m-%d')
+            master_activity_log[['Last Name', 'First Name']] = \
+                master_activity_log[['Last Name', 'First Name']].apply(lambda x: x.str.strip())
+            master_activity_log['DOC'] = master_activity_log['DOC'].astype(int)
+            master_activity_log['Last Name'] = master_activity_log['Last Name'].str.upper()
+            master_activity_log['First Name'] = master_activity_log['First Name'].str.upper()
+
+
     
             # Check for duplicate entries in activity logs
             activities_duplicated = check_log_for_duplicates(master_activity_log,
@@ -125,12 +142,18 @@ def load_activity_logs(month:str, year:str, pre_processed, sysid_to_doc):
     
             # Perform a check on the master_activity_log to determine if any DOCs
             # have no match to a SYSID record
-            missing_doc = master_activity_log.merge(sysid_to_doc, on='DOC', how='outer', 
-                                      indicator=True).\
-                query('_merge=="left_only"')[['Last Name', 'First Name', 'DOC', 'file']].\
-                    drop_duplicates(keep='first')
-            missing_doc.to_excel(data_log_path + 'missing_doc_' + month + '_' + \
-                                 year + '.xlsx')
+            # missing_doc = master_activity_log.merge(sysid_to_doc, on='DOC', how='outer', 
+            #                           indicator=True).\
+            #     query('_merge=="left_only"')[['Last Name', 'First Name', 'DOC', 'file']].\
+            #         drop_duplicates(keep='first')
+            # missing_doc.to_excel(data_log_path + 'missing_doc_' + month + '_' + \
+            #                       year + '.xlsx')
+                
+            # Perform a check on the master_activity_log to determine if
+            # multiple individuals have the same DOC
+            dup_df = check_for_duplicate_doc(master_activity_log)
+            dup_df.to_excel(data_log_path + DUPLICATE_DOC_FILE + "_" + month + \
+                            "_" + year + ".xlsx")
                         
             # Write all log records that raised an error to excel sheet
             bad_file_df = pd.DataFrame(bad_file_log)
@@ -200,6 +223,29 @@ def check_log_for_duplicates(master_activity_log, month, year):
     else:
         return False
 
+def check_for_duplicate_doc(master_activity_log):
+    '''Checks master_activity_log for duplicate log entries, and writes all
+    duplicate entries into excel file
+    
+    :param master_activity_log: Dataframe of all activity logs aggregated
+    :param month: the current month of investigation
+    :param year: the current year of investigation
+    
+    :return: returns True if duplicates exist
+    '''
+    temp = master_activity_log.groupby(['DOC', 'First Name', 'Last Name']).\
+        size().groupby(level=0).size()
+        
+    temp = temp.to_frame(name = 'Num Unique')
+    temp = temp.loc[temp['Num Unique'] > 1].reset_index()
+    temp = master_activity_log.merge(temp['DOC'], on='DOC', how='inner')[['Last Name', 'First Name', 'DOC', 'file']]
+    
+    if temp.shape[0] > 0:
+        print('Duplicate DOCs found for multiple individuals')
+        
+    return temp
+
+
 # Clean the data retrieved from the excel sheets
 # Returns the original dataset with only the rows that match criteria specified
 def clean_data(data, filename, file_month, file_day, file_year):
@@ -234,7 +280,7 @@ def main():
     # this is caused by the fact that the activity logs have data validated cells
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     temp, lookup, num_files, bad_file_log = \
-        load_activity_logs('January', '2022')
+        load_activity_logs('April', '2022', False, None)
     
     print('end')
 if __name__ == "__main__" :

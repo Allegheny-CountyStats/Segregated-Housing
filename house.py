@@ -228,6 +228,11 @@ class housing:
     def get_all_inmate_movements(self, sysid:int):
         return self.housing_history.loc[self.housing_history.SYSID == sysid].\
                                         copy()
+
+    # Clear all values from movement_log. Typically used to reset the housing
+    # object on a new day and new jail snapshot                                        
+    def reset_movement_log(self):
+        self.movement_log = self.movement_log[0:0]
     
 def main():
         
