@@ -5,7 +5,7 @@ Created on Fri Jul 30 16:49:51 2021
 @author: WMui
 """
 
-Oracle = __import__("Oracle Connection")
+#Oracle = __import__("Oracle Connection")
 import databases as db
 import pandas as pd
 import numpy as np
@@ -63,7 +63,7 @@ class jail :
         if jail.jail_history is None :
             
             # Create an Oracle connection object
-            conn = Oracle.Oracle('ACPRD1')
+            conn = db.Oracle('ACPRD1')
             
             with open('jail_state.sql') as f:
                 jail_state_query = f.read()
@@ -86,7 +86,7 @@ class jail :
         if jail.temp_release_history is None :
             
             # Create an Oracle connection object
-            conn = Oracle.Oracle('ACPRD1')
+            conn = db.Oracle('ACPRD1')
             
             with open('temp_release.sql') as f:
                 temp_release_query = f.read()

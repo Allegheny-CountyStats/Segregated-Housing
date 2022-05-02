@@ -7,7 +7,8 @@ Created on Thu Oct  7 08:42:42 2021
 import pandas as pd
 import jail as jail
 from datetime import timedelta, datetime
-Oracle = __import__("Oracle Connection")
+import databases as db
+# Oracle = __import__("Oracle Connection")
 
 
 class housing:
@@ -17,7 +18,7 @@ class housing:
     def __init__(self, date=None):
         
         if housing.raw_housing_history is None:
-            conn = Oracle.Oracle('ACPRD1')
+            conn = db.Oracle('ACPRD1')
             
             # Get query that retrieves housing movements
             with open('house_move.sql') as f:

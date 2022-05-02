@@ -137,17 +137,16 @@ def load_activity_logs(month:str, year:str, pre_processed, sysid_to_doc):
 
     
             # Check for duplicate entries in activity logs
-            activities_duplicated = check_log_for_duplicates(master_activity_log,
-                                                             month, year)
+            check_log_for_duplicates(master_activity_log, month, year)
     
             # Perform a check on the master_activity_log to determine if any DOCs
             # have no match to a SYSID record
-            # missing_doc = master_activity_log.merge(sysid_to_doc, on='DOC', how='outer', 
-            #                           indicator=True).\
-            #     query('_merge=="left_only"')[['Last Name', 'First Name', 'DOC', 'file']].\
-            #         drop_duplicates(keep='first')
-            # missing_doc.to_excel(data_log_path + 'missing_doc_' + month + '_' + \
-            #                       year + '.xlsx')
+            missing_doc = master_activity_log.merge(sysid_to_doc, on='DOC', how='outer', 
+                                      indicator=True).\
+                query('_merge=="left_only"')[['Last Name', 'First Name', 'DOC', 'file']].\
+                    drop_duplicates(keep='first')
+            missing_doc.to_excel(data_log_path + 'missing_bad_doc_' + month + '_' + \
+                                  year + '.xlsx')
                 
             # Perform a check on the master_activity_log to determine if
             # multiple individuals have the same DOC
@@ -163,7 +162,7 @@ def load_activity_logs(month:str, year:str, pre_processed, sysid_to_doc):
         # Export master activity log to excel sheet (this is performed even if
         # activity log is empty.
         master_activity_log.to_excel(data_log_path + 'master_activity_log_' + \
-                                     month + '_' + year + '.xlsx')
+                                     month + '_' + year + '.xlsx', index = False)
                 
                 
         print('\nLOG LOADING COMPLETE\n')

@@ -24,18 +24,22 @@ import numpy as np
 
 
 HOUR_LIMIT = 20 # Constant that defines what the limit of in-cell time
-SAVE = True   # Set to True to output report to excel sheet
+SAVE = False   # Set to True to output report to excel sheet
 MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
-ACTIVITY_LOG_PRE_PROCESSED = False # Set to True, if processing of activity
+ACTIVITY_LOG_PRE_PROCESSED = True # Set to True, if processing of activity
                                 # logs already completed and loading log
                                 # from previously created excel sheet.
 COHORT_PRE_PROCESSED = False     # Set to True, if original "SH_Aggregated" list
                                 # already created and loading cohort list from
                                 # previously created excel sheet
 BYPASS = False # Set to True, to disregard specific cells as SH, and consider
-                # all cells SH for purposes of calculation.                                
+                # all cells SH for purposes of calculation.
+EXCLUSION_TIERS = ['Tier 4', 'Tier 5', 'Isolation', 'ISOLATION']
+                # Medical tiers that obviate a need for 20 hours of out-of-cell
+                # time, thus exclusing any individual who is in that tier for
+                # that day.
 
 START_DATE = '2022-04-01' # Start date for jail analysis
 END_DATE = '2022-04-25' # End date for jail analysis
@@ -89,10 +93,11 @@ def main():
     #                                     on='SYSID', indicator=False)
     #######################################################################
     
-    # Retrieve a list of individuals by SYSID, who had days spent higher than a
-    # Tier 1 designation, or were designated as new or transfer (and thus not
-    # required to be given out of cell time)
-    exclusion_list = get_exclusion_days(master_activity_log, sysid_to_doc)
+    # Retrieve a list of individuals by SYSID, who had days spent days in a tier
+    # designation higher than Tier 1, or were designated as new or transfer 
+    # (and thus not required to be given out of cell time)
+    exclusion_list = get_exclusion_days(master_activity_log, sysid_to_doc,
+                                        EXCLUSION_TIERS)
     
     # Merge exclusion_list and find the difference between SH_Days and
     # days when a medical exclusion exists
@@ -130,15 +135,23 @@ def main():
                            start_date + ' to ' + end_date + '.xlsx')
     #######################################################################
 
-def get_exclusion_days(master_activity_log, sysid_to_doc):
+def get_exclusion_days(master_activity_log, sysid_to_doc, exclusion_tiers=None):
     '''Retrieve a dataframe listing all individuals from the
-    master_activity_log, and the days, for which they had a medical status of
-    Tier 2 or above, or were designated .
+    master_activity_log, and the days, for which they had a medical status that
+    matched the tiers in the 'exclusion_tiers', or were designated as new or 
+    transfer individual. The exclusion_tiers identifies all the tiers for which
+    individuals are EXCLUDED from the mandatory out of cell time.
+    
+    :param master_activity_log: Master activity log, aggregation of all
+                    activity logs.
+    :param sysid_to_doc: lookup table between sysid and doc 
+    :param exclusion_tiers: list of tiers that match the 'Med Status' column of
+                    activity logs, that would exclude an individual from the
+                    necessary 20 hours of out-of-cell time.
     '''
     # Get all individuals-days for which the med status was Tier 2 or above
     temp_df = master_activity_log.loc[
-        (master_activity_log['Med Status'].isin(['Tier 2', 'Tier 3', 'Tier 4', 
-                                            'Tier 5', 'Isolation', 'ISOLATION'])) | 
+        (master_activity_log['Med Status'].isin(exclusion_tiers)) | 
         (master_activity_log.isin(['New', 'Transfer']).any(axis=1))].copy()
 
     
