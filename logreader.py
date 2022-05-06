@@ -115,7 +115,14 @@ def load_activity_logs(month:str, year:str, pre_processed, sysid_to_doc):
         
         print('\n' + str(num_files) + ' activity logs loaded\n')
         
-        # Check to ensure master_activity_log has entires, before performing
+        # Export master activity log to excel sheet temporarily (this is 
+        # performed even if activity log is empty), so error checking can be
+        # done off-line on the excel sheet to identify which rows have the 
+        # errors which are thrown in the QA check below.
+        master_activity_log.to_excel(data_log_path + 'master_activity_log_' + \
+                                     month + '_' + year + '.xlsx', index = False)
+        
+        # Check to ensure master_activity_log has entries, before performing
         # QA checks
         if master_activity_log.shape[0] > 0 :
             master_activity_log.sort_values(by = ['Date', 'DOC'], inplace = True)

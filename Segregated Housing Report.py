@@ -21,28 +21,35 @@ from tqdm import tqdm
 import os
 import calendar
 import numpy as np
+from ast import literal_eval
 
 
 HOUR_LIMIT = 20 # Constant that defines what the limit of in-cell time
-SAVE = False   # Set to True to output report to excel sheet
+SAVE = True   # Set to True to output report to excel sheet
 MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
-ACTIVITY_LOG_PRE_PROCESSED = True # Set to True, if processing of activity
+ACTIVITY_LOG_PRE_PROCESSED = False # Set to True, if processing of activity
                                 # logs already completed and loading log
                                 # from previously created excel sheet.
-COHORT_PRE_PROCESSED = False     # Set to True, if original "SH_Aggregated" list
+COHORT_PRE_PROCESSED = False    # Set to True, if original "SH_Aggregated" list
                                 # already created and loading cohort list from
                                 # previously created excel sheet
 BYPASS = False # Set to True, to disregard specific cells as SH, and consider
                 # all cells SH for purposes of calculation.
-EXCLUSION_TIERS = ['Tier 4', 'Tier 5', 'Isolation', 'ISOLATION']
+EXCLUSION_TIERS = ['Tier 4', 'Tier 5', 'Isolation', 'ISOLATION', 'New', 'Transfer']
                 # Medical tiers that obviate a need for 20 hours of out-of-cell
                 # time, thus exclusing any individual who is in that tier for
                 # that day.
+                
+ACTIVITY_LOG_PARTICIPANT_QA = ['5MC'] # This list all the units which requires
+                # a participant be in the activity log to be considered in the
+                # SH analysis. That is, if a person is not in the activty log
+                # we are assuming they do not have to have 20 hours of out-of-cell
+                # tell.
 
 START_DATE = '2022-04-01' # Start date for jail analysis
-END_DATE = '2022-04-25' # End date for jail analysis
+END_DATE = '2022-04-30' # End date for jail analysis
 
 
 def main():
@@ -93,7 +100,7 @@ def main():
     #                                     on='SYSID', indicator=False)
     #######################################################################
     
-    # Retrieve a list of individuals by SYSID, who had days spent days in a tier
+    # Retrieve a list of individuals by SYSID, who had days spent in a tier
     # designation higher than Tier 1, or were designated as new or transfer 
     # (and thus not required to be given out of cell time)
     exclusion_list = get_exclusion_days(master_activity_log, sysid_to_doc,
@@ -149,10 +156,10 @@ def get_exclusion_days(master_activity_log, sysid_to_doc, exclusion_tiers=None):
                     activity logs, that would exclude an individual from the
                     necessary 20 hours of out-of-cell time.
     '''
-    # Get all individuals-days for which the med status was Tier 2 or above
-    temp_df = master_activity_log.loc[
-        (master_activity_log['Med Status'].isin(exclusion_tiers)) | 
-        (master_activity_log.isin(['New', 'Transfer']).any(axis=1))].copy()
+    # Get all individuals-days for which there was a comment in any column
+    # that matched exclusion_tiers, thus eliminating them from consideration
+    # for SH inclusion.     
+    temp_df = master_activity_log.loc[master_activity_log.isin(exclusion_tiers).any(axis=1)].copy()
 
     
     # Link SYSID to list of DOC - duplicate rows, where DOCs link to an old
@@ -255,7 +262,7 @@ def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
         file_path = data_dir + 'All movements ' + start_date + ' to ' + \
             end_date + '.xlsx'
             
-        print ("All movements pre-processed...loading " + file_path)
+        print ("All movements pre-processed...loading " + file_path + '\n')
         
         all_movements = pd.read_excel(file_path)
         all_movements.drop(columns='Unnamed: 0', inplace=True, errors='ignore')
@@ -286,15 +293,19 @@ def analyze_all_movements_log(all_movements:pd.DataFrame,
     '''
     data_dir = os.path.dirname(os.getcwd()) + '\\Reports\\'
     file_name = 'SH_Cohort list '
+    file_path = data_dir + file_name + START_DATE + " to " + END_DATE + ".xlsx"
     
     print("Identifying cohort in 'Segregated Housing' each day")
     
     # If pre-processed = True, don't process movements log, and grab results
     # from excel sheet
     if pre_processed :
-        df = pd.read_excel(data_dir + file_name + " list " + START_DATE + \
-                           " to " + END_DATE + ".xlsx")
+        df = pd.read_excel(file_path)
         
+        # read_excel interprets lists as strings, need to explicitly re-cast
+        # string into pandas list
+        df.SH_Days = df.SH_Days.apply(literal_eval)
+        print ("SH Cohort list pre-processed...loading " + file_path)            
         return df
     
     # Start a running list of sh individuals as dictionary, as well as the
@@ -339,8 +350,7 @@ def analyze_all_movements_log(all_movements:pd.DataFrame,
                                         on='SYSID', indicator=False)
     
     if SAVE:
-        SH_Aggregated.to_excel(data_dir + file_name + START_DATE + " to " + \
-                               END_DATE + ".xlsx")
+        SH_Aggregated.to_excel(file_path, index=False)
         
     return SH_Aggregated
     
