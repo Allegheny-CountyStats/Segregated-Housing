@@ -48,8 +48,8 @@ ACTIVITY_LOG_PARTICIPANT_QA = ['5MC'] # This list all the units which requires
                 # we are assuming they do not have to have 20 hours of out-of-cell
                 # tell.
 
-START_DATE = '2022-04-01' # Start date for jail analysis
-END_DATE = '2022-04-30' # End date for jail analysis
+START_DATE = '2022-05-01' # Start date for jail analysis
+END_DATE = '2022-05-09' # End date for jail analysis
 
 
 def main():
@@ -190,7 +190,8 @@ def get_exclusion_days(master_activity_log, sysid_to_doc, exclusion_tiers=None):
 def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
     ''' Create an all_movements log, either by reading from a pre-processed excel
     sheet, or by running through all housing records and generating an
-    an all_movements log manually
+    an all_movements log manually, which will indicate all the movements as well
+    as whether the unit was a SH unit for the duration of the inmate's stay.
     
     :param pre_procesed: True, if all_movements log exists as excel file and
                         can be loaded directly, otherwise run process manually
@@ -215,15 +216,15 @@ def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
         acj_movements = house.housing()
         
         # Iterate each day and do the analysis
-        for date in jail_days:
+        for datetime in jail_days:
             
-            print("Processing movements on " + date)
+            print("Processing movements on " + datetime)
             # set the jailstate for the given date
-            acj.set_jail_state(date, bypass)
+            acj.set_jail_state(datetime, bypass)
             
             # grab all housing movements for current date
             # change this to use start date and end date, so we account for different audit times
-            curr_day_movements = acj_movements.get_housing_history_by_date_range(date)
+            curr_day_movements = acj_movements.get_housing_history_by_date_range(datetime)
             
             # Reset the movement_log in the house() object for each day
             acj_movements.reset_movement_log()
@@ -236,10 +237,6 @@ def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
                                     total = curr_day_movements.shape[0],
                                     unit = 'Moves', ncols = 100):
                 
-                # Perhaps move this to after the first move since 
-                # update_movement_log_from_jail_snapshot() was just run
-                #acj_movements.update_movement_log_from_jail_snapshot(acj)
-                
 
                 acj.move_sysid(row.SYSID, row.SECTION, row.BLOCK, row.CELL, 
                                   row.MDATE.strftime('%Y-%m-%d %H:%M:%S'))
@@ -247,7 +244,8 @@ def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
             
             # Append all house movements of the particular day
             all_movements = all_movements.append(acj_movements.movement_log.\
-                                                  assign(JAIL_DAY=date.split(' ', 1)[0]))
+                                                  assign(JAIL_DAY=datetime.\
+                                                         split(' ', 1)[0]))
                 
             print("\n")
 

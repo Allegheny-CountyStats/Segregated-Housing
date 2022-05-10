@@ -394,16 +394,16 @@ class jail :
                     self.jail_state.loc[index, 'HOUSING'] = 'SH'
             else:
                 # Empty units will be considered NON-SH
-                if section == 'LEV5' and block == 'PODC' and count <= 1 :
+                if section == 'LEV1' and block == 'PODC' \
+                    and cell in PODC1_CELLS and count <= 1:
+                    self.jail_state.loc[index, 'HOUSING'] = 'SH'                                            
+                elif section == 'LEV5' and block == 'PODC' and count <= 1 :
                     self.jail_state.loc[index, 'HOUSING'] = 'SH'
                 elif section == 'LEV5' and block == 'PODD' and count <= 1:
                     self.jail_state.loc[index, 'HOUSING'] = 'SH'
                 elif section == 'LEV5M' and block == 'PODD' and count <= 1 :
                     self.jail_state.loc[index, 'HOUSING'] = 'SH'
                 elif section == 'LEV8' and block == 'PODE' and count <= 1 :
-                    self.jail_state.loc[index, 'HOUSING'] = 'SH'
-                elif section == 'LEV4' and block == 'PODF' and count <= 1 \
-                    and cell in PODF4_CELLS:
                     self.jail_state.loc[index, 'HOUSING'] = 'SH'
                 elif section == 'LEV5' and block == 'PODF' and count <= 1 \
                     and cell in PODF5_CELLS:
