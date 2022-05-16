@@ -48,8 +48,8 @@ ACTIVITY_LOG_PARTICIPANT_QA = ['5MC'] # This list all the units which requires
                 # we are assuming they do not have to have 20 hours of out-of-cell
                 # tell.
 
-START_DATE = '2022-05-01' # Start date for jail analysis
-END_DATE = '2022-05-09' # End date for jail analysis
+START_DATE = '2022-05-10' # Start date for jail analysis
+END_DATE = '2022-05-12' # End date for jail analysis
 
 
 def main():
@@ -134,8 +134,10 @@ def main():
         apply(lambda x: len(x))
     add_num_episodes(SH_Aggregated, 'Non Med Ex Dates', 'NUM_NON_EX_EPISODES')
     
-    # Add Booking profile
+    # Add Booking profile + sort by Non Med Ex Dates
     SH_Aggregated = add_booking_profile(SH_Aggregated)
+    SH_Aggregated.sort_values(by=['Num_Non_Med_Ex_Days'], ascending = False, 
+                              axis=0, inplace = True, ignore_index=True)
 
     
     SH_Aggregated.to_excel(data_dir + 'Segregated Housing list ' + 

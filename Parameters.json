@@ -1,0 +1,21 @@
+{
+    "start date" : "2022-05-02",
+    "end date" : "2022-05-09",
+    "hour limit" : 20, 
+    "sh units": [
+        {
+            "Block": "PODC",
+            "Level": "LEV1",
+            "Cell Min": "220",
+            "Cell Max": "228"
+        },
+        {
+            "Block": "PODC",
+            "Level": "LEV5",
+            "Cell Min": "0",
+            "Cell Max": "0"
+        }
+    ],
+    "exclusion tiers" : ["Tier 4", "Tier 5", "Isolation", "ISOLATION", "New", "Transfer"],
+    "participant qa" : ["5MC"]
+}

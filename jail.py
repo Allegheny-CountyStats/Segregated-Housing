@@ -342,7 +342,7 @@ class jail :
     '''Determine whether the unit is SH or NON-SH, and update if necessary'''
     def update_sh_state(self, index = None, bypass = BYPASS):
         
-        # Update the housing logic for the entire jail
+        # index is None indicates an update all units of the entire jail_state
         if index is None:
             self.jail_state.HOUSING = 'NON-SH'
             if self.bypass:
@@ -388,7 +388,8 @@ class jail :
             count = self.jail_state.loc[index, 'COUNT']
         
             if self.bypass:
-                if count != 1 : # Empty units will be considered NON-SH
+                # Empty or 'jail release' units will be considered NON-SH
+                if count != 1 or section == 'XXXX': 
                     self.jail_state.loc[index, 'HOUSING'] = 'NON-SH'
                 else:
                     self.jail_state.loc[index, 'HOUSING'] = 'SH'
