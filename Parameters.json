@@ -6,15 +6,51 @@
         {
             "Block": "PODC",
             "Level": "LEV1",
-            "Cell Min": "220",
+            "Cell Min": "221",
             "Cell Max": "228"
+        },
+        {
+            "Block": "PODF",
+            "Level": "LEV4",
+            "Cell Min": "201",
+            "Cell Max": "213"
+        },
+        {
+            "Block": "PODF",
+            "Level": "LEV5",
+            "Cell Min": "119",
+            "Cell Max": "128"
         },
         {
             "Block": "PODC",
             "Level": "LEV5",
             "Cell Min": "0",
-            "Cell Max": "0"
-        }
+            "Cell Max": "1000"
+        },
+        {
+            "Block": "PODD",
+            "Level": "LEV5",
+            "Cell Min": "0",
+            "Cell Max": "1000"
+        },
+        {
+            "Block": "PODC",
+            "Level": "LEV5M",
+            "Cell Min": "0",
+            "Cell Max": "1000"
+        },
+        {
+            "Block": "PODD",
+            "Level": "LEV5M",
+            "Cell Min": "0",
+            "Cell Max": "1000"
+        },
+        {
+            "Block": "PODE",
+            "Level": "LEV8",
+            "Cell Min": "0",
+            "Cell Max": "1000"
+        },                        
     ],
     "exclusion tiers" : ["Tier 4", "Tier 5", "Isolation", "ISOLATION", "New", "Transfer"],
     "participant qa" : ["5MC"]

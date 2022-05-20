@@ -25,7 +25,7 @@ from ast import literal_eval
 
 
 HOUR_LIMIT = 20 # Constant that defines what the limit of in-cell time
-SAVE = True   # Set to True to output report to excel sheet
+SAVE = False   # Set to True to output report to excel sheet
 MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
@@ -48,8 +48,8 @@ ACTIVITY_LOG_PARTICIPANT_QA = ['5MC'] # This list all the units which requires
                 # we are assuming they do not have to have 20 hours of out-of-cell
                 # tell.
 
-START_DATE = '2022-05-10' # Start date for jail analysis
-END_DATE = '2022-05-12' # End date for jail analysis
+START_DATE = '2022-05-02' # Start date for jail analysis
+END_DATE = '2022-05-15' # End date for jail analysis
 
 
 def main():
@@ -89,15 +89,6 @@ def main():
                                               master_activity_log,
                                               sysid_to_doc, COHORT_PRE_PROCESSED)
     
-    # Transfer running list of days in segregated house as well as pods,
-    # to dataframe, and add metric columns for Num_SH_Days, SH_Days, and 
-    # Num_Episodes
-    # SH_Aggregated = pd.DataFrame(list(sh_dictionary.items()),
-    #                              columns=['SYSID', 'SH_Days'])
-    # PODS_Aggregated = pd.DataFrame(list(pod_dictionary.items()),
-    #                              columns=['SYSID', 'PODS'])
-    # SH_Aggregated = SH_Aggregated.merge(PODS_Aggregated, how='left',
-    #                                     on='SYSID', indicator=False)
     #######################################################################
     
     # Retrieve a list of individuals by SYSID, who had days spent in a tier
@@ -138,10 +129,19 @@ def main():
     SH_Aggregated = add_booking_profile(SH_Aggregated)
     SH_Aggregated.sort_values(by=['Num_Non_Med_Ex_Days'], ascending = False, 
                               axis=0, inplace = True, ignore_index=True)
-
     
-    SH_Aggregated.to_excel(data_dir + 'Segregated Housing list ' + 
-                           start_date + ' to ' + end_date + '.xlsx')
+    # Re-sort columns before saving
+    SH_Aggregated = SH_Aggregated[['PODS', 'Non Med Ex Dates', 
+                                   'Num_Non_Med_Ex_Days', 'NUM_NON_EX_EPISODES',
+                                   'DOC', 'FNAME', 'LNAME', 'SYSID', 'SH_Days',
+                                   'Med Ex Dates', 'Non Med Ex Dates', 'Num_SH_Days',
+                                   'NUM_EPISODES', 'Num_Med_Ex_Days', 'COMDATE',
+                                   'RELDATE', 'GEND_OMS', 'MCI_UNIQ_ID', 'DOB',
+                                   'RACE', 'ETHNICITY', 'AGE']]
+
+    if SAVE:
+        SH_Aggregated.to_excel(data_dir + 'Segregated Housing list ' + 
+                               start_date + ' to ' + end_date + '.xlsx')
     #######################################################################
 
 def get_exclusion_days(master_activity_log, sysid_to_doc, exclusion_tiers=None):
@@ -325,12 +325,14 @@ def analyze_all_movements_log(all_movements:pd.DataFrame,
                            total = len(day_movements['SYSID'].unique().tolist()),
                            ncols = 100,
                            unit = 'SYSID') :
+            # all movements in a particular day, for current inmate
             df = day_movements.loc[day_movements.SYSID == inmate].copy()
             
             # if statement used to handle long words in 'BLOCK' column
-            df['unit'] = df.apply(lambda x: x['SECTION'] + \
-                                  x['BLOCK'][3:] if x['SECTION'] != 'LEVG' else '-' + x['BLOCK'], 
-                                  axis = 1)
+            df['unit'] = df.apply(lambda x: x['SECTION'][3:] + \
+                                  x['BLOCK'][3:] + '-' + x['CELL'] 
+                                  if x['SECTION'] != 'LEVG' else 'LEVG-' + \
+                                      x['BLOCK'], axis = 1)
             
             if over_hour_limit(df, master_activity_log, sysid_to_doc) :                                
                 #curr_day_sh[inmate] = day
@@ -340,18 +342,14 @@ def analyze_all_movements_log(all_movements:pd.DataFrame,
     
         
     # Transfer running list of days in segregated house as well as pods,
-    # to dataframe, and add metric columns for Num_SH_Days, SH_Days, and 
-    # Num_Episodes. Then write to excel sheet if SAVED = True
+    # to dataframe. Write to excel sheet if SAVED = True
     SH_Aggregated = pd.DataFrame(list(running_sh_dict.items()),
                                  columns=['SYSID', 'SH_Days'])
     PODS_Aggregated = pd.DataFrame(list(running_pod_dict.items()),
                                  columns=['SYSID', 'PODS'])
     SH_Aggregated = SH_Aggregated.merge(PODS_Aggregated, how='left',
                                         on='SYSID', indicator=False)
-    
-    if SAVE:
-        SH_Aggregated.to_excel(file_path, index=False)
-        
+            
     return SH_Aggregated
     
     

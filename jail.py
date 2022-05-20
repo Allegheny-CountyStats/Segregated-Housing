@@ -14,7 +14,7 @@ import house as house
 from datetime import datetime as dt
 from datetime import timedelta
 
-C1_MIN_CELL = 220
+C1_MIN_CELL = 221
 C1_MAX_CELL = 228
 F4_MIN_CELL = 201
 F4_MAX_CELL = 213

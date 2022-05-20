@@ -264,14 +264,17 @@ def clean_data(data, filename, file_month, file_day, file_year):
     # Clean column names with leading and trailing spaces
     data.columns = data.columns.str.strip()
     
-    # Only keep rows with data in the DOC, and Name columns
+    # Only keep rows with data in the DOC, Name columns, and the correct date
+    # in the date column.
     data = data.loc[(data.DOC.notna()) & (data['Last Name'].notna()) &
                     (data.DOC != 'EXAMPLE') & ~data.Date.isnull()]
     
     
-    # Check that the date in the file matches the Date column
-    bad_data = data.loc[(data.Date != log_date) & (data.DOC != 'EXAMPLE') &
-                        (data.DOC.notna())]
+    # Check that the date in the file matches the Date column, and that it is
+    # not null
+    # bad_data = data.loc[((data.Date != log_date) & (data.Date.notnull())) 
+    bad_data = data.loc[((data.Date != log_date)) 
+                        & (data.DOC != 'EXAMPLE') & (data.DOC.notna())]
     data = data.loc[data.Date == log_date]
     
     
