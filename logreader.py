@@ -266,8 +266,14 @@ def clean_data(data, filename, file_month, file_day, file_year):
     
     # Only keep rows with data in the DOC, Name columns, and the correct date
     # in the date column.
-    data = data.loc[(data.DOC.notna()) & (data['Last Name'].notna()) &
+    data = data.loc[(data.DOC.notna()) & 
+                    (data['Last Name'].notna()) &
                     (data.DOC != 'EXAMPLE') & ~data.Date.isnull()]
+    
+    # Must also filter out all the 'space-only' strings that are empty, but
+    # not caught above
+    data = data.loc[(data.DOC.apply(lambda x: not str(x).isspace())) & 
+                    (data['Last Name'].apply(lambda x: not str(x).isspace()))]
     
     
     # Check that the date in the file matches the Date column, and that it is

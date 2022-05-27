@@ -13,6 +13,7 @@ import sys
 import house as house
 from datetime import datetime as dt
 from datetime import timedelta
+import json
 
 C1_MIN_CELL = 221
 C1_MAX_CELL = 228
@@ -25,6 +26,8 @@ PODF4_CELLS = list(map(str, np.arange(F4_MIN_CELL, F4_MAX_CELL + 1).tolist()))
 PODF5_CELLS = list(map(str, np.arange(F5_MIN_CELL, F5_MAX_CELL + 1).tolist()))
 BYPASS = bool # True: bypass segregated housing unit checks, and make all
               # solo cells considered segregated housing
+PARAM_FILE = 'Parameters.json'
+
 
 class jail :
     '''
@@ -112,6 +115,11 @@ class jail :
         self.curr_date = None
         self.curr_time = None
         self.jail_state = None
+        self.sh_parameters = None
+        self.exclusion_tiers = None
+        
+        self.set_sh_parameters(PARAM_FILE)
+        self.set_exclusion_tiers(PARAM_FILE)
         
         # If current_date_time parameter is given, set the current jail_state
         # otherwise leave all attributes as None
@@ -173,11 +181,46 @@ class jail :
                     # This function sets all the object attributes
                     self.set_jail_state(jail_curr_date_time[0])
             
-    ''' Sets the state of the jail at the given audit_datetime.
-    audit_datetime should be the audit_datetime of the day when used by
-    jail initiation functions. If set to middle of the day, the process
-    will require runnning through the housing_history log to process moves.'''
+    
+    def set_sh_parameters(self, param_file:str):
+        '''Sets the sh_parameters variable by reading the param_file'''
+        
+        temp_dict = {}
+        with open(param_file, 'r+') as file:
+            json_obj = json.load(file)
+            
+        sh_units_lst = json_obj['sh units']
+        
+        for unit in sh_units_lst:
+            if (unit.get('Cell Min') is not None) & \
+                (unit.get('Cell Min') is not None) :
+                    temp_dict[(unit['Block'], unit['Level'])] = \
+                        list(map(str, np.arange(int(unit.get('Cell Min')), 
+                                                int(unit.get('Cell Max')) + 1).tolist())) + \
+                            unit.get('Cells', [])
+            else:
+                temp_dict[(unit['Block'], unit['Level'])] = unit.get('Cells', [])
+
+        self.sh_parameters = temp_dict
+        
+        
+
+    def set_exclusion_tiers(self, param_file:str):
+        '''Get all exclusion tiers from .json parameter file'''
+
+        with open(param_file, 'r+') as file:
+            json_obj = json.load(file)
+            
+        self.exclusion_tiers = json_obj['exclusion tiers']
+            
+
+
     def set_jail_state(self, audit_datetime, bypass = None):
+        ''' Sets the state of the jail at the given audit_datetime.
+        audit_datetime should be the audit_datetime of the day when used by
+        jail initiation functions. If set to middle of the day, the process
+        will require runnning through the housing_history log to process moves.'''
+        
         # Sets bypass if given, otherwise default to value set at 
         # initialization
         if bypass is None:
@@ -476,6 +519,10 @@ class jail :
     def get_bypass_state(self):
         return self.bypass
     
+    '''Returns the units that are deemed segregated housing'''
+    def get_sh_parameters(self):
+        return self.sh_parameters
+    
     '''Returns a list of audit_datetimes from start and end+1day date:string
     inclusive'''
     def get_jail_datetimes(self, start_date:str, end_date:str):
@@ -496,28 +543,9 @@ def main():
     end_date = '2021-09-30'
     
     # Setup jail day
-    wilson = jail('2021-10-01')
+    temp_jail_state = jail('2021-10-01')
     
-    # Retrieve all housing movements
-    temp = house.housing()
-    
-    # Update movement log from initial snapshot of jail
-    temp.update_movement_log_from_jail_snapshot(wilson)
-    
-    # Retrieve the movements for a particular day - this should match the jail
-    # initiation day
-    curr_day_movements = temp.get_housing_history_by_date_range('2021-10-01 00:30:00').reset_index(drop=True)
-    
-    # Iterate through each movement and update movement_log
-    for index, row in curr_day_movements.iterrows() :          
-        print("(" + str(index) + ") " + "Processing move at: " + \
-              row.MDATE.strftime('%Y-%m-%d %H:%M:%S'))
-        wilson.move_sysid(row.SYSID, row.SECTION, row.BLOCK, row.CELL, 
-                          row.MDATE.strftime('%Y-%m-%d %H:%M:%S'))
-        temp.update_movement_log_from_jail_snapshot(wilson)
-    
-    
-    print("stop")
+    print("in here")
 
 if __name__ == "__main__" :
     main()

@@ -22,10 +22,9 @@ import os
 import calendar
 import numpy as np
 from ast import literal_eval
+import json
 
-
-HOUR_LIMIT = 20 # Constant that defines what the limit of in-cell time
-SAVE = False   # Set to True to output report to excel sheet
+SAVE = True   # Set to True to output report to excel sheet
 MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
@@ -37,31 +36,38 @@ COHORT_PRE_PROCESSED = False    # Set to True, if original "SH_Aggregated" list
                                 # previously created excel sheet
 BYPASS = False # Set to True, to disregard specific cells as SH, and consider
                 # all cells SH for purposes of calculation.
-EXCLUSION_TIERS = ['Tier 4', 'Tier 5', 'Isolation', 'ISOLATION', 'New', 'Transfer']
+                
+PARAM_FILE = "Parameters.json"
+
+# get parameters from json file
+with open(PARAM_FILE, 'r+') as file:
+    json_obj = json.load(file)
+    
+HOUR_LIMIT = json_obj['hour limit'] # Constant that defines what the limit of in-cell time
+START_DATE = json_obj['start date'] # Start date for jail analysis
+END_DATE = json_obj['end date'] # End date for jail analysis
+EXCLUSION_TIERS = json_obj['exclusion tiers']
                 # Medical tiers that obviate a need for 20 hours of out-of-cell
                 # time, thus exclusing any individual who is in that tier for
                 # that day.
-                
-ACTIVITY_LOG_PARTICIPANT_QA = ['5MC'] # This list all the units which requires
+ACTIVITY_LOG_PARTICIPANT_QA = json_obj['participant qa'] 
+                # This list all the units which requires
                 # a participant be in the activity log to be considered in the
                 # SH analysis. That is, if a person is not in the activty log
                 # we are assuming they do not have to have 20 hours of out-of-cell
                 # tell.
-
-START_DATE = '2022-05-02' # Start date for jail analysis
-END_DATE = '2022-05-15' # End date for jail analysis
-
 
 def main():
     #######################################################################
     # Set starting parameters to use for analysis
     data_dir = os.path.dirname(os.getcwd()) + '\\Reports\\'
     bypass = BYPASS # bypass set to true during COVID lockdown
-                    # signifying all cells are considered SH                    
-    start_date = START_DATE
-    end_date = END_DATE
-    month = dt.strptime(start_date, '%Y-%m-%d').month
-    year = dt.strptime(start_date, '%Y-%m-%d').year
+                    # signifying all cells are considered SH
+    
+    # start_date = START_DATE
+    # end_date = END_DATE
+    month = dt.strptime(START_DATE, '%Y-%m-%d').month
+    year = dt.strptime(START_DATE, '%Y-%m-%d').year
     #######################################################################
     
     # Retrieve SYSID associated with each DOC number
@@ -79,7 +85,7 @@ def main():
     #######################################################################
     
     all_movements = get_all_movements_log(MOVEMENTS_PRE_PROCESSED, 
-                                          start_date, end_date, bypass)
+                                          START_DATE, END_DATE, bypass)
     
     #######################################################################
 
@@ -141,7 +147,7 @@ def main():
 
     if SAVE:
         SH_Aggregated.to_excel(data_dir + 'Segregated Housing list ' + 
-                               start_date + ' to ' + end_date + '.xlsx')
+                               START_DATE + ' to ' + END_DATE + '.xlsx')
     #######################################################################
 
 def get_exclusion_days(master_activity_log, sysid_to_doc, exclusion_tiers=None):
