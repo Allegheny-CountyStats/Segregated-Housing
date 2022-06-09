@@ -385,6 +385,9 @@ class jail :
     '''Determine whether the unit is SH or NON-SH, and update if necessary'''
     def update_sh_state(self, index = None, bypass = BYPASS):
         
+        # Retrieve SH units from self object
+        sh_params = self.get_sh_parameters()
+        
         # index is None indicates an update all units of the entire jail_state
         if index is None:
             self.jail_state.HOUSING = 'NON-SH'
@@ -392,37 +395,51 @@ class jail :
                 self.jail_state.loc[(self.jail_state.COUNT == 1) & 
                                (self.jail_state['SECTION'] != 'XXXX'),
                                'HOUSING'] = 'SH'
-            else:
-                # SH cells for post January 2022
-                self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODC') & 
-                    (self.jail_state['SECTION'] == 'LEV1') &
-                    (self.jail_state['CELL'].isin(PODC1_CELLS)) &
-                    (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
+            else:     
+                for key in sh_params:
+                    # Run for units that are all SH
+                    if not sh_params[key]:
+                        self.jail_state.loc[(self.jail_state['BLOCK'] == key[0]) & 
+                            (self.jail_state['SECTION'] == key[1]) &
+                            (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
+                    
+                    # Run for units that have specific cells which are SH
+                    else:
+                        self.jail_state.loc[(self.jail_state['BLOCK'] == key[0]) & 
+                            (self.jail_state['SECTION'] == key[1]) &
+                            (self.jail_state['CELL'].isin(sh_params[key])) &
+                            (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
+                
+                # # SH cells for post January 2022
+                # self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODC') & 
+                #     (self.jail_state['SECTION'] == 'LEV1') &
+                #     (self.jail_state['CELL'].isin(PODC1_CELLS)) &
+                #     (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
                                 
-                self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODC') & 
-                    (self.jail_state['SECTION'] == 'LEV5') &
-                    (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'                
+                # self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODC') & 
+                #     (self.jail_state['SECTION'] == 'LEV5') &
+                #     (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'                
                 
-                self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODD') & 
-                    (self.jail_state['SECTION'] == 'LEV5') &
-                    (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
+                # self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODD') & 
+                #     (self.jail_state['SECTION'] == 'LEV5') &
+                #     (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
                 
-                self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODF') & 
-                    (self.jail_state['SECTION'] == 'LEV5') &
-                    (self.jail_state['CELL'].isin(PODF5_CELLS)) &
-                    (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
+                # self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODF') & 
+                #     (self.jail_state['SECTION'] == 'LEV5') &
+                #     (self.jail_state['CELL'].isin(PODF5_CELLS)) &
+                #     (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
                 
-                self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODC') & 
-                    (self.jail_state['SECTION'] == 'LEV5M') &
-                    (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
+                # self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODC') & 
+                #     (self.jail_state['SECTION'] == 'LEV5M') &
+                #     (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
                 
-                self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODD') & 
-                    (self.jail_state['SECTION'] == 'LEV5M') &
-                    (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
+                # self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODD') & 
+                #     (self.jail_state['SECTION'] == 'LEV5M') &
+                #     (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'
                 
-                self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODE') & 
-                    (self.jail_state['SECTION'] == 'LEV8') &
-                    (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'                
+                # self.jail_state.loc[(self.jail_state['BLOCK'] == 'PODE') & 
+                #     (self.jail_state['SECTION'] == 'LEV8') &
+                #     (self.jail_state['COUNT'] <= 1), 'HOUSING'] = 'SH'                
         # Update a specific jail unit by index
         else:
             section = self.jail_state.loc[index, 'SECTION']
@@ -437,23 +454,40 @@ class jail :
                 else:
                     self.jail_state.loc[index, 'HOUSING'] = 'SH'
             else:
+                # Set the default housing to 'NON-SH', change if the housing
+                # matches count and SH parameter criteria
+                self.jail_state.loc[index, 'HOUSING'] = 'NON-SH'
+                
+                for key in sh_params:
+                    # Run for units that are all SH
+                    if not sh_params[key]:
+                        if section == key[1] and block == key[0] and count <= 1:
+                            self.jail_state.loc[index, 'HOUSING'] = 'SH'
+                    
+                    # Run for units that have specific cells which are SH
+                    else:
+                        if section == key[1] and block == key[0] and \
+                            count <= 1 and cell in sh_params[key]:
+                            self.jail_state.loc[index, 'HOUSING'] = 'SH'
+
+                
                 # Empty units will be considered NON-SH
-                if section == 'LEV1' and block == 'PODC' \
-                    and cell in PODC1_CELLS and count <= 1:
-                    self.jail_state.loc[index, 'HOUSING'] = 'SH'                                            
-                elif section == 'LEV5' and block == 'PODC' and count <= 1 :
-                    self.jail_state.loc[index, 'HOUSING'] = 'SH'
-                elif section == 'LEV5' and block == 'PODD' and count <= 1:
-                    self.jail_state.loc[index, 'HOUSING'] = 'SH'
-                elif section == 'LEV5M' and block == 'PODD' and count <= 1 :
-                    self.jail_state.loc[index, 'HOUSING'] = 'SH'
-                elif section == 'LEV8' and block == 'PODE' and count <= 1 :
-                    self.jail_state.loc[index, 'HOUSING'] = 'SH'
-                elif section == 'LEV5' and block == 'PODF' and count <= 1 \
-                    and cell in PODF5_CELLS:
-                    self.jail_state.loc[index, 'HOUSING'] = 'SH'
-                else:
-                    self.jail_state.loc[index, 'HOUSING'] = 'NON-SH'
+                # if section == 'LEV1' and block == 'PODC' \
+                #     and cell in PODC1_CELLS and count <= 1:
+                #     self.jail_state.loc[index, 'HOUSING'] = 'SH'                                            
+                # elif section == 'LEV5' and block == 'PODC' and count <= 1 :
+                #     self.jail_state.loc[index, 'HOUSING'] = 'SH'
+                # elif section == 'LEV5' and block == 'PODD' and count <= 1:
+                #     self.jail_state.loc[index, 'HOUSING'] = 'SH'
+                # elif section == 'LEV5M' and block == 'PODD' and count <= 1 :
+                #     self.jail_state.loc[index, 'HOUSING'] = 'SH'
+                # elif section == 'LEV8' and block == 'PODE' and count <= 1 :
+                #     self.jail_state.loc[index, 'HOUSING'] = 'SH'
+                # elif section == 'LEV5' and block == 'PODF' and count <= 1 \
+                #     and cell in PODF5_CELLS:
+                #     self.jail_state.loc[index, 'HOUSING'] = 'SH'
+                # else:
+                #     self.jail_state.loc[index, 'HOUSING'] = 'NON-SH'
             
     '''Return all units that have changed since the current date'''
     def get_changed_units(self):
@@ -539,11 +573,11 @@ class jail :
 
       
 def main():
-    start_date = '2021-09-01'
-    end_date = '2021-09-30'
+    start_date = '2022-05-02'
+    end_date = '2022-05-17'
     
     # Setup jail day
-    temp_jail_state = jail('2021-10-01')
+    temp_jail_state = jail('2022-05-17')
     
     print("in here")
 

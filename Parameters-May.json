@@ -42,6 +42,6 @@
             "Level": "LEV8"
         }
     ],
-    "exclusion tiers" : ["Tier 4", "Tier 5", "Isolation", "ISOLATION", "New", "Transfer", "isolation"],
-    "semi rhu units" : ["5MC"]
+    "exclusion tiers" : ["Tier 4", "Tier 5", "Isolation", "ISOLATION", "New", "Transfer"],
+    "participant qa" : ["5MC"]
 }

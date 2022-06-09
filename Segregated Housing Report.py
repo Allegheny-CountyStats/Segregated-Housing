@@ -24,11 +24,11 @@ import numpy as np
 from ast import literal_eval
 import json
 
-SAVE = True   # Set to True to output report to excel sheet
+SAVE = False   # Set to True to output report to excel sheet
 MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
-ACTIVITY_LOG_PRE_PROCESSED = False # Set to True, if processing of activity
+ACTIVITY_LOG_PRE_PROCESSED = True # Set to True, if processing of activity
                                 # logs already completed and loading log
                                 # from previously created excel sheet.
 COHORT_PRE_PROCESSED = False    # Set to True, if original "SH_Aggregated" list
@@ -50,12 +50,13 @@ EXCLUSION_TIERS = json_obj['exclusion tiers']
                 # Medical tiers that obviate a need for 20 hours of out-of-cell
                 # time, thus exclusing any individual who is in that tier for
                 # that day.
-ACTIVITY_LOG_PARTICIPANT_QA = json_obj['participant qa'] 
+SEMI_RHU_UNITS = json_obj['semi rhu units'] 
                 # This list all the units which requires
                 # a participant be in the activity log to be considered in the
                 # SH analysis. That is, if a person is not in the activty log
                 # we are assuming they do not have to have 20 hours of out-of-cell
                 # tell.
+                
 
 def main():
     #######################################################################
@@ -97,9 +98,8 @@ def main():
     
     #######################################################################
     
-    # Retrieve a list of individuals by SYSID, who had days spent in a tier
-    # designation higher than Tier 1, or were designated as new or transfer 
-    # (and thus not required to be given out of cell time)
+    # Retrieve a list of individuals by SYSID, who had days for which they
+    # were excluded from requiring the 4 hours of out-of-cell time
     exclusion_list = get_exclusion_days(master_activity_log, sysid_to_doc,
                                         EXCLUSION_TIERS)
     
@@ -137,6 +137,8 @@ def main():
                               axis=0, inplace = True, ignore_index=True)
     
     # Re-sort columns before saving
+    # This was a request by jail staff to place columsn most relevant to
+    # the front
     SH_Aggregated = SH_Aggregated[['PODS', 'Non Med Ex Dates', 
                                    'Num_Non_Med_Ex_Days', 'NUM_NON_EX_EPISODES',
                                    'DOC', 'FNAME', 'LNAME', 'SYSID', 'SH_Days',
@@ -200,6 +202,14 @@ def get_all_movements_log(pre_processed, start_date, end_date, bypass=None) :
     sheet, or by running through all housing records and generating an
     an all_movements log manually, which will indicate all the movements as well
     as whether the unit was a SH unit for the duration of the inmate's stay.
+    
+    This functions by (1) creating a jail object, (2) setting the initial jail 
+    state each day, (3) taking a snapshot of that intial state as the first
+    entry in the movement_log, (4) iterating through each movement of the day
+    and updating the jail for each movement to reflect the state of the jail
+    after each movement, (5) checking for all inmates who moved and or had a 
+    "state" change between SH/NON-SH, and updating the movement log to reflect
+    that change.
     
     :param pre_procesed: True, if all_movements log exists as excel file and
                         can be loaded directly, otherwise run process manually
@@ -301,7 +311,6 @@ def analyze_all_movements_log(all_movements:pd.DataFrame,
     file_name = 'SH_Cohort list '
     file_path = data_dir + file_name + START_DATE + " to " + END_DATE + ".xlsx"
     
-    print("Identifying cohort in 'Segregated Housing' each day")
     
     # If pre-processed = True, don't process movements log, and grab results
     # from excel sheet
@@ -313,6 +322,8 @@ def analyze_all_movements_log(all_movements:pd.DataFrame,
         df.SH_Days = df.SH_Days.apply(literal_eval)
         print ("SH Cohort list pre-processed...loading " + file_path)            
         return df
+
+    print("Identifying cohort in 'Segregated Housing' each day")
     
     # Start a running list of sh individuals as dictionary, as well as the
     # pods housing each individual
@@ -355,6 +366,9 @@ def analyze_all_movements_log(all_movements:pd.DataFrame,
                                  columns=['SYSID', 'PODS'])
     SH_Aggregated = SH_Aggregated.merge(PODS_Aggregated, how='left',
                                         on='SYSID', indicator=False)
+    
+    # Write results for future usage
+    SH_Aggregated.to_excel(file_path, index=False)
             
     return SH_Aggregated
     
@@ -512,10 +526,15 @@ def over_hour_limit(movement_log, master_activity_log, sysid_to_doc) :
     # date, from the existence of a person in the activity log. Run
     # 'activity_log_cohort_check' for each pod applicable.
     #######################################################################
-    # Apply above kludge removal for '5MC'
-    movement_log = activity_log_cohort_check('5MC', doc, master_activity_log, 
-                                             movement_log)
+    # Apply above kludge removal for all units listed in 'semi rhu units'
+    for unit in SEMI_RHU_UNITS:
+        movement_log = activity_log_cohort_check(unit, doc, 
+                                                 master_activity_log, 
+                                                 movement_log)
     
+    # movement_log = activity_log_cohort_check('5MC', doc, 
+    #                                          master_activity_log, 
+    #                                          movement_log)
     
     
     # Calculates the total time spent in a SH unit, minus activity hours
@@ -572,7 +591,7 @@ def activity_log_cohort_check(pod:str, doc:np.integer, master_activity_log,
             drop_indexes = movement_log[(movement_log.SECTION == ('LEV' + pod[0:-1])) &
                                         (movement_log.BLOCK == ('POD' + pod[-1]))].index
             movement_log.drop(drop_indexes, inplace=True)
-            movement_log = movement_log.reset_index()
+            #movement_log = movement_log.reset_index()
             
     return movement_log
 
