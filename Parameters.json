@@ -1,27 +1,15 @@
 {
-    "start date" : "2022-05-02",
-    "end date" : "2022-05-17",
+    "start date" : "2022-06-01",
+    "end date" : "2022-06-05",
     "hour limit" : 20, 
     "sh units": [
         {
             "Block": "PODC",
             "Level": "LEV1",
-            "Cell Min": "221",
+            "Cell Min": "222",
             "Cell Max": "228"
         },
         {
-            "Block": "PODF",
-            "Level": "LEV4",
-            "Cell Min": "201",
-            "Cell Max": "213"
-        },
-        {
-            "Block": "PODF",
-            "Level": "LEV5",
-            "Cell Min": "119",
-            "Cell Max": "128"
-        },
-        {
             "Block": "PODC",
             "Level": "LEV5"
         },
@@ -36,6 +24,10 @@
         {
             "Block": "PODD",
             "Level": "LEV5M"
+        },
+        {
+            "Block": "PODB",
+            "Level": "LEV5"
         },
         {
             "Block": "PODE",
@@ -43,5 +35,5 @@
         }
     ],
     "exclusion tiers" : ["Tier 4", "Tier 5", "Isolation", "ISOLATION", "New", "Transfer", "isolation"],
-    "semi rhu units" : ["5MC"]
+    "semi rhu units" : ["5MC", "5B"]
 }

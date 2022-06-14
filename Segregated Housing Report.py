@@ -24,8 +24,8 @@ import numpy as np
 from ast import literal_eval
 import json
 
-SAVE = False   # Set to True to output report to excel sheet
-MOVEMENTS_PRE_PROCESSED = False # Set to True, if processsing of movement logs
+SAVE = True   # Set to True to output report to excel sheet
+MOVEMENTS_PRE_PROCESSED = True # Set to True, if processsing of movement logs
                                 # already completed and loading all_movements
                                 # from previously created excel sheet.
 ACTIVITY_LOG_PRE_PROCESSED = True # Set to True, if processing of activity
@@ -486,6 +486,8 @@ def over_hour_limit(movement_log, master_activity_log, sysid_to_doc) :
     # Determine the doc associated with the sysid
     doc = sysid_to_doc.loc[sysid_to_doc.SYSID == sysid, 'DOC'].squeeze()
     
+    #print("DOC : " + str(doc) + " Day: " + rec_day)
+    
     # Determine total out of cell (activity) time for given inmate with DOC
     # If doc = <int32> indicates a doc was found from sysid_to_doc table,
     # otherwise datatype would be empty Series.
@@ -571,9 +573,15 @@ def activity_log_cohort_check(pod:str, doc:np.integer, master_activity_log,
     # Only consider individuals to be segregated if they exist in the activity 
     # log. Create the list of DOC which are present in the activity log for
     # a particular pod on a particular START_DATE
-    if (master_activity_log is not None) and (not master_activity_log.empty) :
+    if (master_activity_log is not None) and (not master_activity_log.empty) \
+        and (not movement_log.empty):
         # Movement log day/activity log day
-        rec_day = movement_log.JAIL_DAY[0] 
+        try:
+            rec_day = movement_log.reset_index(drop=True).JAIL_DAY[0]
+        except KeyError:
+            print('key error exception, doc: ' + str(doc) + ' pod: ' + pod)
+        
+        
         sh_eligible_cohort = master_activity_log.loc[
             (master_activity_log.Date == rec_day) &
             (master_activity_log.POD == pod)]
@@ -591,7 +599,6 @@ def activity_log_cohort_check(pod:str, doc:np.integer, master_activity_log,
             drop_indexes = movement_log[(movement_log.SECTION == ('LEV' + pod[0:-1])) &
                                         (movement_log.BLOCK == ('POD' + pod[-1]))].index
             movement_log.drop(drop_indexes, inplace=True)
-            #movement_log = movement_log.reset_index()
             
     return movement_log
 
